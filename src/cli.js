@@ -15,8 +15,7 @@ Usage:
   export-ton-verifier import-wrapper <destPath> [--force]
 
 Description:
-  1) Generates a Groth16 verifier for the TON blockchain from a Circom .zkey file,
-     using the default EJS template (./templates/func_verifier.ejs).
+  1) Generates a Groth16 verifier for the TON blockchain from a Circom .zkey file
   2) (Optional) Can also copy a TypeScript wrapper template (templates/Verifier.ts)
      to your project. By default, the wrapper is NOT imported anywhere; you decide
      its destination and handle imports yourself.
@@ -34,20 +33,15 @@ Options:
   --wrapper-dest <destPath> Copy the TypeScript wrapper (templates/Verifier.ts) to <destPath> after generation
   --force                   Overwrite existing file when used with 'import-wrapper' or '--wrapper-dest'
 
-Notes:
-  • The TS wrapper is a convenience helper you can import in your app manually, e.g.:
-      import { Verifier } from "./path/to/Verifier";
-  • No automatic imports are performed by this tool.
-
 Examples:
   # Just generate FunC verifier from .zkey
   export-ton-verifier ./circuits/verifier.zkey ./verifier.fc
 
   # Generate and also drop the TypeScript wrapper into src/zk/
-  export-ton-verifier ./circuits/verifier.zkey ./verifier.fc --wrapper-dest ./src/zk/ --force
+  npx  export-ton-verifier ./circuits/verifier.zkey ./verifier.fc --wrapper-dest ./wrappers/ --force
 
   # Only copy the TypeScript wrapper
-  export-ton-verifier import-wrapper ./src/zk/Verifier.ts --force
+  npx  export-ton-verifier import-wrapper ./wrappers/Verifier.ts --force
 `);
 }
 

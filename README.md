@@ -1,20 +1,43 @@
 # Export TON Verifier
 
+Export TON Verifier — a CLI tool and JavaScript library for generating a Groth16 verifier in the FunC language for the TON blockchain from Circom `.zkey` files.
+It comes with a TypeScript wrapper template for convenient interaction with the contract from your application.
+
 ## Installation
 
 ```bash
-git clone https://github.com/mysteryon88/export-ton-verifier.git
-cd export-ton-verifier
-npm install
-npm run build:cjs
+npm install export-ton-verifier
+
+# Help
+npx  export-ton-verifier --help
 ```
 
-## Usage
+## Import as a library
+
+```ts
+import {
+  g1Compressed,
+  g2Compressed,
+  toHexString,
+  generateVerifier,
+} from "export-ton-verifier";
+
+// OR
+
+const { g1Compressed, g2Compressed } = require("export-ton-verifier");
+```
+
+## Usage CLI
 
 ```sh
-npx  export-ton-verifier ./circuits/test.zkey ./contracts/verifier.fc
+# Just generate FunC verifier from .zkey
+npx  export-ton-verifier ./circuits/verifier.zkey ./verifier.fc
 
-node  ./export-ton-verifier/src/cli.js ./circuits/test.zkey ./contracts/verifier.fc
+# Generate and also drop the TypeScript wrapper into src/zk/
+npx  export-ton-verifier ./circuits/verifier.zkey ./verifier.fc --wrapper-dest ./wrappers/ --force
+
+# Only copy the TypeScript wrapper
+npx  export-ton-verifier import-wrapper ./wrappers/Verifier.ts --force
 ```
 
 ## References
