@@ -1,0 +1,23 @@
+{
+  "name": "export-ton-verifier",
+  "version": "1.0.0",
+  "description": "Tool for generating a Groth16 verifier code for the TON blockchain from Circom .zkey files.",
+  "homepage": "https://github.com/mysteryon88/export-ton-verifier#readme",
+  "bugs": {
+    "url": "https://github.com/mysteryon88/export-ton-verifier/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mysteryon88/export-ton-verifier.git"
+  },
+  "license": "MIT",
+  "author": "white_coon",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "snarkjs": "^0.7.5"
+  }
+}
