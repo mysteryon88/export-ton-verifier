@@ -1,0 +1,161 @@
+const OP_VERIFY = stringCrc32("op::verify");
+const P1_SIZE = 48 * 8;
+const P2_SIZE = 96 * 8;
+
+<% for (let i = 0; i < IC.length; i++) { -%>
+const IC<%= i %> = stringHexToSlice("<%= IC[i] %>");
+<% } -%>
+
+const vk_gamma_2 = stringHexToSlice("<%= vk_gamma_2 %>");
+const vk_delta_2 = stringHexToSlice("<%= vk_delta_2 %>");
+const vk_alpha_1 = stringHexToSlice("<%= vk_alpha_1 %>");
+const vk_beta_2  = stringHexToSlice("<%= vk_beta_2 %>");
+
+@pure
+fun blsG1Add(x: slice, y: slice): slice
+    asm "BLS_G1_ADD";
+@pure
+fun blsG1Neg(x: slice): slice
+    asm "BLS_G1_NEG";
+@pure
+fun blsG1Multiexp(
+    x1: slice, y1: int,
+    n: int
+): slice
+    asm "BLS_G1_MULTIEXP";
+@pure
+fun blsPairing(x1: slice, y1: slice, x2: slice, y2: slice, x3: slice, y3: slice, x4: slice, y4: slice, n: int): int
+    asm "BLS_PAIRING";
+
+
+fun slice.loadP1(mutate self): slice {
+    var c: cell = self.loadRef();
+    var s: slice = c.beginParse();
+    var p1: slice = s.getFirstBits(P1_SIZE);
+    s.skipBits(P1_SIZE);
+    self = s; return p1;
+}
+
+fun slice.loadP2(mutate self): slice {
+    var c: cell = self.loadRef();
+    var s: slice = c.beginParse();
+    var p2: slice = s.getFirstBits(P2_SIZE);
+    s.skipBits(P2_SIZE);
+    self = s; return p2;
+}
+
+fun slice.loadNewint(mutate self): int {
+    var c: cell = self.loadRef();
+    var s: slice = c.beginParse();
+    var x: int = s.loadUint(256);
+    self = s; return x;
+}
+
+fun groth16Verify(
+    piA: slice,
+    piB: slice,
+    piC: slice
+<% for (let i = 0; i < nPublic; i++) { %>,
+    pubInput<%= i %>: int
+<% } %>
+): int {
+    var res: int = 0;
+
+<% if (nPublic > 0) { %>
+    // cpub = sum_{i=1..nPublic} IC_i * pubInput(i-1)  +  IC_0
+    var cpub: slice = blsG1Multiexp(
+        IC1, pubInput0,
+        1
+    );
+<% for (let i = 2; i <= nPublic; i++) { %>
+    cpub = blsG1Add(cpub, blsG1Multiexp(
+        IC<%= i %>, pubInput<%= i-1 %>,
+        1
+    ));
+<% } %>
+    cpub = blsG1Add(cpub, IC0);
+<% } else { %>
+    // Нет публичных входов: cpub = IC0
+    var cpub: slice = IC0;
+<% } %>
+
+    var piANeg: slice = blsG1Neg(piA);
+    var a: int = blsPairing(
+        cpub,       vk_gamma_2,
+        piANeg,     piB,
+        piC,        vk_delta_2,
+        vk_alpha_1, vk_beta_2,
+        4
+    );
+
+    if (a == 0) {
+        res = 0;
+    } else {
+        res = 1;
+    }
+
+    return (res);
+}
+
+fun verify(
+    inMsgBody: slice
+): int {
+    var piA: slice = inMsgBody.loadP1();
+    var piB: slice = inMsgBody.loadP2();
+    var piC: slice = inMsgBody.loadP1();
+
+<% for (let i = 0; i < nPublic; i++) { %>
+    var pubInput<%= i %>: int = inMsgBody.loadNewint();
+<% } %>
+
+    return groth16Verify(
+        piA,
+        piB,
+        piC,
+<% for (let i = 0; i < nPublic; i++) { %>
+        pubInput<%= i %>
+<% } %>
+    );
+}
+
+// in the future, use: fun onInternalMessage(in: InMessage) {
+fun onInternalMessage(myBalance: int, msgValue: int, inMsgFull: cell, inMsgBody: slice) {
+    if (inMsgBody.isEmpty()) { // ignore all empty messages
+        return;
+    }
+
+    var cs: slice = inMsgFull.beginParse();
+    var flags: int = cs.loadUint(4);
+    if (flags & 1) { // ignore all bounced messages
+        return;
+    }
+
+    // by convention: op (32 bits) then query_id (64 bits)
+    var op: int = inMsgBody.loadUint(32);
+    var queryId: int = inMsgBody.loadUint(64);
+
+    if (op == OP_VERIFY) {
+        var res: int = verify(inMsgBody);
+        return;
+    }
+
+    throw 0xffff; // unknown op
+}
+
+get fun get_verify(
+    piA: slice,
+    piB: slice,
+    piC: slice,
+<% for (let i = 0; i < nPublic; i++) { %>
+    pubInput<%= i %>: int
+<% } %>
+): int {
+    return groth16Verify(
+        piA,
+        piB,
+        piC,
+<% for (let i = 0; i < nPublic; i++) { %>
+        pubInput<%= i %>
+<% } %>
+    );
+}

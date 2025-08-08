@@ -11,7 +11,7 @@ const __dirname = path.dirname(__filename);
 function printHelp() {
   console.log(`
 Usage:
-  export-ton-verifier <zkeyPath> <outputPath> [--wrapper-dest <destPath>]
+  export-ton-verifier <zkeyPath> <outputPath> [--func | --tolk] [--wrapper-dest <destPath>] [--force]
   export-ton-verifier import-wrapper <destPath> [--force]
 
 Description:
@@ -22,7 +22,7 @@ Description:
 
 Arguments:
   zkeyPath        Path to the .zkey file (required for main command)
-  outputPath      Path to save the generated FunC verifier file (required for main command)
+  outputPath      Path to save the generated verifier file (required for main command)
 
 Subcommands:
   import-wrapper  Copies templates/Verifier.ts to <destPath> (file or directory).
@@ -30,18 +30,23 @@ Subcommands:
 
 Options:
   -h, --help                Show this help message and exit
+  --func                    Use FunC template (templates/func_verifier.ejs) [default]
+  --tolk                    Use Tolk template (templates/tolk_verifier.ejs)
   --wrapper-dest <destPath> Copy the TypeScript wrapper (templates/Verifier.ts) to <destPath> after generation
   --force                   Overwrite existing file when used with 'import-wrapper' or '--wrapper-dest'
 
 Examples:
-  # Just generate FunC verifier from .zkey
-  export-ton-verifier ./circuits/verifier.zkey ./verifier.fc
+  # Just generate FunC verifier from .zkey (default template)
+  npx export-ton-verifier ./circuits/verifier.zkey ./verifier.fc
 
-  # Generate and also drop the TypeScript wrapper into src/zk/
-  npx  export-ton-verifier ./circuits/verifier.zkey ./verifier.fc --wrapper-dest ./wrappers/ --force
+  # Generate Tolk verifier
+  npx export-ton-verifier ./circuits/verifier.zkey ./verifier.tolk --tolk
+
+  # Generate and also drop the TypeScript wrapper into ./wrappers/
+  npx export-ton-verifier ./circuits/verifier.zkey ./verifier.fc --func --wrapper-dest ./wrappers/ --force
 
   # Only copy the TypeScript wrapper
-  npx  export-ton-verifier import-wrapper ./wrappers/Verifier.ts --force
+  npx export-ton-verifier import-wrapper ./wrappers/Verifier.ts --force
 `);
 }
 
@@ -81,6 +86,16 @@ async function copyWrapper(wrapperSrc, destPath, { force = false } = {}) {
   const content = await fsp.readFile(wrapperSrc);
   await fsp.writeFile(finalDest, content);
   console.log(`✅ Wrapper copied to: ${finalDest}`);
+}
+
+function parseTemplateFlag(args) {
+  const wantsFunc = args.includes("--func");
+  const wantsTolk = args.includes("--tolk");
+  if (wantsFunc && wantsTolk) {
+    console.error("❌ You cannot use --func and --tolk at the same time.");
+    process.exit(1);
+  }
+  return wantsTolk ? "tolk" : "func"; // default: func
 }
 
 async function main() {
@@ -127,10 +142,14 @@ async function main() {
   }
 
   const [zkeyPath, outputPath] = positional;
+
+  const lang = parseTemplateFlag(flags); // 'func' | 'tolk'
+  const templateFilename =
+    lang === "tolk" ? "tolk_verifier.ejs" : "func_verifier.ejs";
+  const templatePath = path.join(__dirname, `./templates/${templateFilename}`);
+
   const wrapperDestIndex = flags.indexOf("--wrapper-dest");
   const force = flags.includes("--force");
-  const templatePath = path.join(__dirname, "./templates/func_verifier.ejs");
-
   const wrapperDest =
     wrapperDestIndex >= 0 ? args[args.indexOf("--wrapper-dest") + 1] : null;
 
@@ -140,6 +159,9 @@ async function main() {
   }
   if (!fileExists(templatePath)) {
     console.error(`❌ Template file not found: ${templatePath}`);
+    console.error(
+      `   Make sure ${templateFilename} exists in ./templates (relative to this CLI).`
+    );
     process.exit(1);
   }
 
