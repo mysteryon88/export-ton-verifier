@@ -1,25 +1,19 @@
 import fs from "fs/promises";
 import ejs from "ejs";
-import path from "path";
-import { fileURLToPath } from "url";
 
-import exportVerificationKey from "./node_modules/snarkjs/src/zkey_export_verificationkey.js";
-import * as curves from "./node_modules/snarkjs/src/curves.js";
+import exportVerificationKey from "../node_modules/snarkjs/src/zkey_export_verificationkey.js";
+import * as curves from "../node_modules/snarkjs/src/curves.js";
 import { utils } from "ffjavascript";
 
 const { unstringifyBigInts } = utils;
 
-// Resolve __dirname for ES modules
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-function toHexString(byteArray) {
+export function toHexString(byteArray) {
   return Array.from(byteArray, (byte) =>
     ("0" + (byte & 0xff).toString(16)).slice(-2)
   ).join("");
 }
 
-function g1Compressed(curve, p1Raw) {
+export function g1Compressed(curve, p1Raw) {
   const p1 = curve.G1.fromObject(p1Raw);
   const buff = new Uint8Array(48);
   curve.G1.toRprCompressed(buff, 0, p1);
@@ -28,7 +22,7 @@ function g1Compressed(curve, p1Raw) {
   return toHexString(buff);
 }
 
-function g2Compressed(curve, p2Raw) {
+export function g2Compressed(curve, p2Raw) {
   const p2 = curve.G2.fromObject(p2Raw);
   const buff = new Uint8Array(96);
   curve.G2.toRprCompressed(buff, 0, p2);
@@ -37,7 +31,7 @@ function g2Compressed(curve, p2Raw) {
   return toHexString(buff);
 }
 
-async function generateVerifier(zkeyPath, templatePath, outputPath) {
+export async function generateVerifier(zkeyPath, templatePath, outputPath) {
   console.log("📦 Loading verification key...");
   const vkRaw = await exportVerificationKey(zkeyPath, console);
 
@@ -72,12 +66,3 @@ async function generateVerifier(zkeyPath, templatePath, outputPath) {
     }
   }
 }
-
-// CLI arguments
-const zkeyPath = process.argv[2] || path.join(__dirname, "../verifier.zkey");
-const templatePath = path.join(__dirname, "./src/templates/func_verifier.ejs");
-const outputPath = process.argv[3] || path.join(__dirname, "../verifier.fc");
-
-generateVerifier(zkeyPath, templatePath, outputPath).catch((err) => {
-  console.error("❌ Error:", err);
-});

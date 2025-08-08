@@ -3,7 +3,7 @@
 ## Installation
 
 ```bash
-git clone https://github.com/USERNAME/export-ton-verifier.git
+git clone https://github.com/mysteryon88/export-ton-verifier.git
 cd export-ton-verifier
 npm install
 ```
@@ -11,7 +11,7 @@ npm install
 ## Usage
 
 ```sh
-node ./export-ton-verifier/generateVerifier.js ./circuits/test.zkey ./contracts/verifier.fc
+node  ./export-ton-verifier/src/cli.js ./circuits/test.zkey ./contracts/verifier.fc
 ```
 
 ## References
