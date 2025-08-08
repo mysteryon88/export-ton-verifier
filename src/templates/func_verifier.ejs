@@ -47,8 +47,8 @@ int bls_pairing(slice x1, slice y1, slice x2, slice y2, slice x3, slice y3, slic
 (int) groth16Verify(
     slice pi_a,
     slice pi_b,
-    slice pi_c
-<% for (let i = 0; i < nPublic; i++) { %>,
+    slice pi_c,
+<% for (let i = 0; i < nPublic; i++) { %>
     int pubInput<%= i %>
 <% } %>
 ) impure {

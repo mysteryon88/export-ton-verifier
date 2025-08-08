@@ -54,8 +54,8 @@ fun slice.loadNewint(mutate self): int {
 fun groth16Verify(
     piA: slice,
     piB: slice,
-    piC: slice
-<% for (let i = 0; i < nPublic; i++) { %>,
+    piC: slice,
+<% for (let i = 0; i < nPublic; i++) { %>
     pubInput<%= i %>: int
 <% } %>
 ): int {
