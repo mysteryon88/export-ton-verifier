@@ -1,11 +1,31 @@
 import fs from "fs/promises";
 import ejs from "ejs";
-
-import exportVerificationKey from "../node_modules/snarkjs/src/zkey_export_verificationkey.js";
-import * as curves from "../node_modules/snarkjs/src/curves.js";
-import { utils } from "ffjavascript";
+import { zKey } from "snarkjs";
+import { buildBn128, buildBls12381, utils } from "ffjavascript";
 
 const { unstringifyBigInts } = utils;
+
+// from node_modules/snarkjs/src/curves.js
+export async function getCurveFromName(name, options) {
+  let curve;
+  let singleThread = options && options.singleThread;
+  const normName = normalizeName(name);
+  if (["BN128", "BN254", "ALTBN128"].indexOf(normName) >= 0) {
+    curve = await buildBn128(singleThread);
+  } else if (["BLS12381"].indexOf(normName) >= 0) {
+    curve = await buildBls12381(singleThread);
+  } else {
+    throw new Error(`Curve not supported: ${name}`);
+  }
+  return curve;
+
+  function normalizeName(n) {
+    return n
+      .toUpperCase()
+      .match(/[A-Za-z0-9]+/g)
+      .join("");
+  }
+}
 
 export function toHexString(byteArray) {
   return Array.from(byteArray, (byte) =>
@@ -33,14 +53,14 @@ export function g2Compressed(curve, p2Raw) {
 
 export async function generateVerifier(zkeyPath, templatePath, outputPath) {
   console.log("📦 Loading verification key...");
-  const vkRaw = await exportVerificationKey(zkeyPath, console);
+  const vkRaw = await zKey.exportVerificationKey(zkeyPath, console);
 
   if (vkRaw.protocol !== "groth16") {
     throw new Error("Only Groth16 is supported.");
   }
 
   const vk = unstringifyBigInts(vkRaw);
-  const curve = await curves.getCurveFromName(vkRaw.curve);
+  const curve = await getCurveFromName(vkRaw.curve);
 
   try {
     console.log("🔄 Compressing points...");

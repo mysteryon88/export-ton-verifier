@@ -15,10 +15,22 @@
   "type": "module",
   "main": "index.js",
   "types": "./index.d.ts",
+  "bin": {
+    "export-ton-verifier": "./cli.js"
+  },
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "src",
+    "templates",
+    "cli.js"
+  ],
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies": {
+    "ejs": "^3.1.10",
+    "ffjavascript": "^0.3.1",
     "snarkjs": "^0.7.5"
   }
 }
