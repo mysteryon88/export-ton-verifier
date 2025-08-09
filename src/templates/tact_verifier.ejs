@@ -1,0 +1,101 @@
+import "@stdlib/deploy";
+
+asm fun blsG1Add(x: Slice, y: Slice): Slice { BLS_G1_ADD }
+asm fun blsG1Neg(x: Slice): Slice { BLS_G1_NEG }
+asm fun blsG1Multiexp(
+<% for (let i = 1; i <= nPublic; i++) { -%>
+  x<%= i %>: Slice, y<%= i %>: Int,
+<% } -%>
+  n: Int
+): Slice { BLS_G1_MULTIEXP }
+asm fun blsPairing(
+  x1: Slice, y1: Slice,
+  x2: Slice, y2: Slice,
+  x3: Slice, y3: Slice,
+  x4: Slice, y4: Slice,
+  n: Int
+): Int { BLS_PAIRING }
+
+const P1_SIZE: Int = 48 * 8;
+const P2_SIZE: Int = 96 * 8;
+
+const vk_gamma_2: Slice = rawSlice("<%= vk_gamma_2 %>");
+const vk_delta_2: Slice = rawSlice("<%= vk_delta_2 %>");
+const vk_alpha_1: Slice = rawSlice("<%= vk_alpha_1 %>");
+const vk_beta_2 : Slice = rawSlice("<%= vk_beta_2  %>");
+
+<% for (let i = 0; i < IC.length; i++) { -%>
+const IC<%= i %>: Slice = rawSlice("<%= IC[i] %>");
+<% } -%>
+
+message Verify {
+  piA: Slice;
+  piB: Slice;
+  piC: Slice;
+<% for (let i = 0; i < nPublic; i++) { -%>
+  pubInput<%= i %>: Int;
+<% } -%>
+}
+
+contract Verifier with Deployable {
+  res: Bool = false;
+
+  receive(msg: Verify) {
+    self.res = self.groth16Verify(
+      msg.piA,
+      msg.piB,
+      msg.piC,
+<% for (let i = 0; i < nPublic; i++) { -%>
+      msg.pubInput<%= i %><%= i + 1 < nPublic ? "," : "" %>
+<% } -%>
+    );
+  }
+
+  fun groth16Verify(
+    piA: Slice,
+    piB: Slice,
+    piC: Slice,
+<% for (let i = 0; i < nPublic; i++) { -%>
+    pubInput<%= i %>: Int<%= i + 1 < nPublic ? "," : "" %>
+<% } -%>
+  ): Bool {
+<% if (nPublic > 0) { -%>
+    let cpub: Slice = blsG1Multiexp(
+<% for (let i = 1; i <= nPublic; i++) { -%>
+      IC<%= i %>, pubInput<%= i - 1 %>,
+<% } -%>
+      <%= nPublic %>
+    );
+    cpub = blsG1Add(cpub, IC0);
+<% } else { -%>
+    let cpub: Slice = IC0;
+<% } -%>
+    let piANeg: Slice = blsG1Neg(piA);
+    let ok: Int = blsPairing(
+      cpub,        vk_gamma_2,
+      piANeg,      piB,
+      piC,         vk_delta_2,
+      vk_alpha_1,  vk_beta_2,
+      4
+    );
+    return ok != 0;
+  }
+
+  get fun verify(
+    piA: Slice,
+    piB: Slice,
+    piC: Slice,
+<% for (let i = 0; i < nPublic; i++) { -%>
+    pubInput<%= i %>: Int<%= i + 1 < nPublic ? "," : "" %>
+<% } -%>
+  ): Bool {
+    return self.groth16Verify(
+      piA, piB, piC,
+<% for (let i = 0; i < nPublic; i++) { -%>
+      pubInput<%= i %><%= i + 1 < nPublic ? "," : "" %>
+<% } -%>
+    );
+  }
+
+  get fun res(): Bool { return self.res; }
+}

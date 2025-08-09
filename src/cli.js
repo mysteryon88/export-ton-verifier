@@ -11,7 +11,7 @@ const __dirname = path.dirname(__filename);
 function printHelp() {
   console.log(`
 Usage:
-  export-ton-verifier <zkeyPath> <outputPath> [--func | --tolk] [--wrapper-dest <destPath>] [--force]
+  export-ton-verifier <zkeyPath> <outputPath> [--func | --tolk | --tact] [--wrapper-dest <destPath>] [--force]
   export-ton-verifier import-wrapper <destPath> [--force]
 
 Description:
@@ -32,6 +32,7 @@ Options:
   -h, --help                Show this help message and exit
   --func                    Use FunC template (templates/func_verifier.ejs) [default]
   --tolk                    Use Tolk template (templates/tolk_verifier.ejs)
+  --tact                    Use Tact template (templates/tact_verifier.ejs)
   --wrapper-dest <destPath> Copy the TypeScript wrapper (templates/Verifier.ts) to <destPath> after generation
   --force                   Overwrite existing file when used with 'import-wrapper' or '--wrapper-dest'
 
@@ -41,6 +42,9 @@ Examples:
 
   # Generate Tolk verifier
   npx export-ton-verifier ./circuits/verifier.zkey ./verifier.tolk --tolk
+
+  # Generate Tact verifier
+  npx export-ton-verifier ./circuits/verifier.zkey ./verifier.tact --tact
 
   # Generate and also drop the TypeScript wrapper into ./wrappers/
   npx export-ton-verifier ./circuits/verifier.zkey ./verifier.fc --func --wrapper-dest ./wrappers/ --force
@@ -89,13 +93,31 @@ async function copyWrapper(wrapperSrc, destPath, { force = false } = {}) {
 }
 
 function parseTemplateFlag(args) {
-  const wantsFunc = args.includes("--func");
-  const wantsTolk = args.includes("--tolk");
-  if (wantsFunc && wantsTolk) {
-    console.error("❌ You cannot use --func and --tolk at the same time.");
+  const allowed = ["--func", "--tolk", "--tact"];
+  const chosen = allowed.filter((f) => args.includes(f));
+  if (chosen.length > 1) {
+    console.error(
+      "❌ You cannot use more than one of --func, --tolk, --tact at the same time."
+    );
     process.exit(1);
   }
-  return wantsTolk ? "tolk" : "func"; // default: func
+  if (chosen.length === 0) return "func"; // default
+  // strip leading "--"
+  return chosen[0].slice(2); // 'func' | 'tolk' | 'tact'
+}
+
+function templateFileFor(lang) {
+  switch (lang) {
+    case "func":
+      return "func_verifier.ejs";
+    case "tolk":
+      return "tolk_verifier.ejs";
+    case "tact":
+      return "tact_verifier.ejs";
+    default:
+      console.error(`❌ Unknown template language: ${lang}`);
+      process.exit(1);
+  }
 }
 
 async function main() {
@@ -143,9 +165,8 @@ async function main() {
 
   const [zkeyPath, outputPath] = positional;
 
-  const lang = parseTemplateFlag(flags); // 'func' | 'tolk'
-  const templateFilename =
-    lang === "tolk" ? "tolk_verifier.ejs" : "func_verifier.ejs";
+  const lang = parseTemplateFlag(flags); // 'func' | 'tolk' | 'tact'
+  const templateFilename = templateFileFor(lang);
   const templatePath = path.join(__dirname, `./templates/${templateFilename}`);
 
   const wrapperDestIndex = flags.indexOf("--wrapper-dest");

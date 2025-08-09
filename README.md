@@ -1,8 +1,10 @@
 # Export TON Verifier
 
-Export TON Verifier — a CLI tool and JavaScript library for generating a Groth16 smart contract verifier for the TON blockchain in FunC or Tolk from Circom .zkey files.
-It supports automatic compression of keys into TON format, EJS-based templating, and selecting the target language (--func or --tolk).
-A ready-to-use TypeScript wrapper template is included, making it easier to interact with the contract from your application.
+Export TON Verifier is a CLI tool and JavaScript library for generating a Groth16 smart contract verifier for the TON blockchain from Circom `.zkey` files.
+It supports FunC, Tolk, and Tact as target languages, selectable via the `--func`, `--tolk`, or `--tact` flags.
+
+The tool automatically compresses keys into TON format, uses EJS-based templating, and lets you choose the contract’s target language.
+A ready-to-use TypeScript wrapper template is included, making it easy to interact with the contract from your application.
 
 ## Installation
 
@@ -37,8 +39,11 @@ npx export-ton-verifier ./circuits/verifier.zkey ./verifier.fc
 # Generate Tolk verifier
 npx export-ton-verifier ./circuits/verifier.zkey ./verifier.tolk --tolk
 
+# Generate Tact verifier
+npx export-ton-verifier ./circuits/verifier.zkey ./verifier.tact --tact
+
 # Generate and also drop the TypeScript wrapper into ./wrappers/
-npx export-ton-verifier ./circuits/verifier.zkey ./verifier.fc --func --wrapper-dest ./wrappers/ --force
+npx export-ton-verifier ./circuits/verifier.zkey ./verifier.func --func --wrapper-dest ./wrappers/ --force
 
 # Only copy the TypeScript wrapper
 npx export-ton-verifier import-wrapper ./wrappers/Verifier.ts --force
