@@ -18,12 +18,7 @@ npx  export-ton-verifier --help
 ## Import as a library
 
 ```ts
-import {
-  g1Compressed,
-  g2Compressed,
-  toHexString,
-  generateVerifier,
-} from "export-ton-verifier";
+import { g1Compressed, g2Compressed } from "export-ton-verifier";
 
 // OR
 
@@ -52,5 +47,6 @@ npx export-ton-verifier import-wrapper ./wrappers/Verifier.ts --force
 ## References
 
 - [TON Docs — Zero-Knowledge Proofs Tutorial](https://docs.ton.org/v3/guidelines/dapps/tutorials/zero-knowledge-proofs)
+- [zkTokenTip/zk-ton-example](https://github.com/zkTokenTip/zk-ton-example)
 - [kroist/snarkjs repository](https://github.com/kroist/snarkjs)
-- [ton-zk-verifier repository](https://github.com/SaberDoTcodeR/ton-zk-verifier)
+- [SaberDoTcodeR/ton-zk-verifier repository](https://github.com/SaberDoTcodeR/ton-zk-verifier)
