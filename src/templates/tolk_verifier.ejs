@@ -1,16 +1,32 @@
-const OP_VERIFY = stringCrc32("op::verify");
-const P1_SIZE = 48 * 8;
-const P2_SIZE = 96 * 8;
+import "@stdlib/tvm-dicts"
 
+// ops
+const OP_VERIFY = stringCrc32("op::verify")
+
+// sizes
+const `verifier::P1_SIZE` = 48 * 8
+const `verifier::P2_SIZE` = 96 * 8
+
+// input constants (IC0 is the base term)
 <% for (let i = 0; i < IC.length; i++) { -%>
-const IC<%= i %> = stringHexToSlice("<%= IC[i] %>");
+const `verifier::IC<%= i %>` = stringHexToSlice("<%= IC[i] %>")
 <% } -%>
 
-const vk_gamma_2 = stringHexToSlice("<%= vk_gamma_2 %>");
-const vk_delta_2 = stringHexToSlice("<%= vk_delta_2 %>");
-const vk_alpha_1 = stringHexToSlice("<%= vk_alpha_1 %>");
-const vk_beta_2  = stringHexToSlice("<%= vk_beta_2 %>");
+// vk constants
+const `verifier::vk_gamma_2` = stringHexToSlice("<%= vk_gamma_2 %>")
+const `verifier::vk_delta_2` = stringHexToSlice("<%= vk_delta_2 %>")
+const `verifier::vk_alpha_1` = stringHexToSlice("<%= vk_alpha_1 %>")
+const `verifier::vk_beta_2`  = stringHexToSlice("<%= vk_beta_2 %>")
 
+// public input dict settings
+const `verifier::publicInputKeyLen` = <%= publicInputKeyLen %>
+const `verifier::nPublic` = <%= nPublic %>
+
+// error codes
+const `verifier::err::public_not_present` = 257
+const `verifier::err::too_many_publics` = 258
+
+// bls intrinsics
 @pure
 fun blsG1Add(x: slice, y: slice): slice
     asm "BLS_G1_ADD";
@@ -18,68 +34,122 @@ fun blsG1Add(x: slice, y: slice): slice
 fun blsG1Neg(x: slice): slice
     asm "BLS_G1_NEG";
 @pure
-fun blsG1Multiexp(
-<% for (let i = 1; i <= nPublic; i++) { -%>
-    x<%= i %>: slice, y<%= i %>: int,
-<% } -%>
-    n: int
-): slice
-    asm "BLS_G1_MULTIEXP";
-@pure
 fun blsPairing(x1: slice, y1: slice, x2: slice, y2: slice, x3: slice, y3: slice, x4: slice, y4: slice, n: int): int
     asm "BLS_PAIRING";
 
+<%
+/*
+  План батчинга MULTIEXP.
+  Правило: максимум 7 пар (x_i, y_i) за один вызов.
+*/
+const maxBatch = 7;
+let sizes = [];
+if (nPublic <= 0) {
+  sizes = [];
+} else if (nPublic <= maxBatch) {
+  sizes = [nPublic];
+} else {
+  const full = Math.floor(nPublic / maxBatch);
+  for (let i = 0; i < full; i++) sizes.push(maxBatch);
+  const rem = nPublic % maxBatch;
+  if (rem > 0) sizes.push(rem);
+}
+const uniqSizes = [...new Set(sizes)];
+-%>
+
+<% uniqSizes.forEach((k) => { -%>
+@pure
+fun blsG1Multiexp_<%= k %>(
+<% for (let i = 1; i <= k; i++) { -%>
+    x<%= i %>: slice, y<%= i %>: int<%= i<k ? "," : "" %>
+<% } -%>
+    , n: int
+): slice
+    asm "BLS_G1_MULTIEXP";
+<% }); -%>
+
+// slice helpers
 fun slice.loadP1(mutate self): slice {
     var c: cell = self.loadRef();
     var s: slice = c.beginParse();
-    var p1: slice = s.getFirstBits(P1_SIZE);
-    s.skipBits(P1_SIZE);
+    var p1: slice = s.getFirstBits(`verifier::P1_SIZE`);
+    s.skipBits(`verifier::P1_SIZE`);
     self = s; return p1;
 }
 
 fun slice.loadP2(mutate self): slice {
     var c: cell = self.loadRef();
     var s: slice = c.beginParse();
-    var p2: slice = s.getFirstBits(P2_SIZE);
-    s.skipBits(P2_SIZE);
+    var p2: slice = s.getFirstBits(`verifier::P2_SIZE`);
+    s.skipBits(`verifier::P2_SIZE`);
     self = s; return p2;
-}
-
-fun slice.loadNewint(mutate self): int {
-    var c: cell = self.loadRef();
-    var s: slice = c.beginParse();
-    var x: int = s.loadUint(256);
-    self = s; return x;
 }
 
 fun groth16Verify(
     piA: slice,
     piB: slice,
     piC: slice,
-<% for (let i = 0; i < nPublic; i++) { -%>
-    pubInput<%= i %>: int<%= i + 1 < nPublic ? "," : "" %>
-<% } -%>
+    pubInputs: dict
 ): int {
     var res: int = 0;
-<% if (nPublic > 0) { -%>
-    var cpub: slice = blsG1Multiexp(
-<% for (let i = 1; i <= nPublic; i++) { -%>
-        IC<%= i %>, pubInput<%= i - 1 %>,
-<% } -%>
-        <%= nPublic %>
-    );
-    cpub = blsG1Add(cpub, IC0);
+
+<% if (nPublic === 0) { -%>
+    // без публичных входов: cpub = IC0
+    var cpub: slice = `verifier::IC0`;
 <% } else { -%>
-    var cpub: slice = IC0;
+    // извлекаем публичные входы по ключам 0..nPublic-1
+<% for (let i = 0; i < nPublic; i++) { -%>
+    var (input<%= i %>: slice?, ok<%= i %>: bool) = pubInputs.uDictDeleteAndGet(`verifier::publicInputKeyLen`, <%= i %>);
+    assert(ok<%= i %>) throw `verifier::err::public_not_present`;
+    var val<%= i %>: int = input<%= i %>!.loadUint(256);
 <% } -%>
+
+    // убеждаемся, что в dict ничего не осталось
+    assert((pubInputs == null)) throw `verifier::err::too_many_publics`;
+
+    // собираем cpub через batched MULTIEXP и суммирование
+<%
+let cursor = 1; // IC1..ICnPublic соответствуют val0..val(n-1)
+-%>
+<% if (sizes.length === 1) { 
+   const k = sizes[0]; -%>
+    var cpub: slice = blsG1Multiexp_<%= k %>(
+<%   for (let i = 0; i < k; i++) { -%>
+        `verifier::IC<%= cursor + i %>`, val<%= i %><%= i<k-1 ? "," : "" %>
+<%   } -%>
+        , <%= k %>
+    );
+<% } else { 
+   let globalIdx = 0;
+   sizes.forEach((k, bi) => { -%>
+<%     if (bi === 0) { -%>
+    var cpub: slice = blsG1Multiexp_<%= k %>(
+<%     } else { -%>
+    cpub = blsG1Add(cpub, blsG1Multiexp_<%= k %>(
+<%     } -%>
+<%     for (let j = 0; j < k; j++) { -%>
+        `verifier::IC<%= cursor + globalIdx + j %>`, val<%= globalIdx + j %><%= j<k-1 ? "," : "" %>
+<%     } -%>
+        , <%= k %>
+    )<%= bi===0 ? ";" : ");" %>
+<%     globalIdx += k; -%>
+<%   }); -%>
+<% } -%>
+
+    // добавляем свободный член IC0
+    cpub = blsG1Add(cpub, `verifier::IC0`);
+<% } -%>
+
+    // pairing check
     var piANeg: slice = blsG1Neg(piA);
     var a: int = blsPairing(
-        cpub,       vk_gamma_2,
-        piANeg,     piB,
-        piC,        vk_delta_2,
-        vk_alpha_1, vk_beta_2,
+        cpub,                 `verifier::vk_gamma_2`,
+        piANeg,               piB,
+        piC,                  `verifier::vk_delta_2`,
+        `verifier::vk_alpha_1`, `verifier::vk_beta_2`,
         4
     );
+
     if (a == 0) {
         res = 0;
     } else {
@@ -92,19 +162,12 @@ fun verify(inMsgBody: slice): int {
     var piA: slice = inMsgBody.loadP1();
     var piB: slice = inMsgBody.loadP2();
     var piC: slice = inMsgBody.loadP1();
-<% for (let i = 0; i < nPublic; i++) { -%>
-    var pubInput<%= i %>: int = inMsgBody.loadNewint();
-<% } -%>
-    return groth16Verify(
-        piA,
-        piB,
-        piC,
-<% for (let i = 0; i < nPublic; i++) { -%>
-        pubInput<%= i %><%= i + 1 < nPublic ? "," : "" %>
-<% } -%>
-    );
+    var pubInputs = inMsgBody.loadDict();
+
+    return groth16Verify(piA, piB, piC, pubInputs);
 }
 
+// in the future, use: fun onInternalMessage(in: InMessage)
 fun onInternalMessage(myBalance: int, msgValue: int, inMsgFull: cell, inMsgBody: slice) {
     if (inMsgBody.isEmpty()) {
         return;
@@ -116,6 +179,7 @@ fun onInternalMessage(myBalance: int, msgValue: int, inMsgFull: cell, inMsgBody:
     }
     var op: int = inMsgBody.loadUint(32);
     var queryId: int = inMsgBody.loadUint(64);
+
     if (op == OP_VERIFY) {
         var res: int = verify(inMsgBody);
         return;
@@ -127,16 +191,12 @@ get fun get_verify(
     piA: slice,
     piB: slice,
     piC: slice,
-<% for (let i = 0; i < nPublic; i++) { -%>
-    pubInput<%= i %>: int<%= i + 1 < nPublic ? "," : "" %>
-<% } -%>
+    pubInputs: slice
 ): int {
     return groth16Verify(
         piA,
         piB,
         piC,
-<% for (let i = 0; i < nPublic; i++) { -%>
-        pubInput<%= i %><%= i + 1 < nPublic ? "," : "" %>
-<% } -%>
+        pubInputs.loadDict()
     );
 }

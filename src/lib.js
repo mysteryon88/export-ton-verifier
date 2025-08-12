@@ -71,6 +71,7 @@ export async function generateVerifier(zkeyPath, templatePath, outputPath) {
       vk_delta_2: g2Compressed(curve, vk.vk_delta_2),
       IC: vk.IC.map((x) => g1Compressed(curve, x)),
       nPublic: vk.IC.length - 1,
+      publicInputKeyLen: 32,
     };
 
     console.log("📄 Rendering template...");
