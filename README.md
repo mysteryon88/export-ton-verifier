@@ -6,7 +6,6 @@ It is essentially an integration with the **snarkjs** library and supports circu
 
 Target languages **FunC**, **Tolk**, and **Tact** are supported, selectable via the `--func`, `--tolk`, or `--tact` flags.
 
-
 ## Installation
 
 ```bash
