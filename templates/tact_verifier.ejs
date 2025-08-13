@@ -37,11 +37,11 @@ asm fun blsG1Multiexp_<%= k %>(
 ): Slice { BLS_G1_MULTIEXP }
 <% }); -%>
 
-// sizes
+// Sizes
 const P1_SIZE: Int = 48 * 8;
 const P2_SIZE: Int = 96 * 8;
 
-// vk constants
+// Verification key constants
 const vk_gamma_2: Slice = rawSlice("<%= vk_gamma_2 %>");
 const vk_delta_2: Slice = rawSlice("<%= vk_delta_2 %>");
 const vk_alpha_1: Slice = rawSlice("<%= vk_alpha_1 %>");
@@ -52,7 +52,7 @@ const vk_beta_2 : Slice = rawSlice("<%= vk_beta_2 %>");
 const IC<%= i %>: Slice = rawSlice("<%= IC[i] %>");
 <% } -%>
 
-// ERRORS
+// Error codes
 const ERR_PUBLIC_NOT_PRESENT: Int = 257;
 const ERR_TOO_MANY_PUBLICS: Int = 258;
 const ERR_INDEX_OUT_OF_RANGE: Int = 259;
@@ -63,12 +63,12 @@ fun ic(idx: Int): Slice {
 <% for (let i = 1; i < IC.length; i++) { -%>
   if (idx == <%= i %>) { return IC<%= i %>; }
 <% } -%>
-  return IC0; // stub
+  return IC0; // Fallback
   // nativeThrow(ERR_INDEX_OUT_OF_RANGE);
 }
 <% } -%>
 
-// message
+// Message definition
 message Verify {
   piA: Slice;
   piB: Slice;
@@ -106,7 +106,7 @@ contract Verifier with Deployable {
     // Loop over full batches of 7
     let done: Int = 0;
     let batchesLeft: Int = <%= full %>;
-    let cpub: Slice = IC0; // start with neutral value and sum the batch results
+    let cpub: Slice = IC0; // Start with neutral value and sum the batch results
     while (batchesLeft > 0) {
       let tmp: Slice = blsG1Multiexp_7(
         ic(done + 1), pubInputs.get(done + 0)!!,
@@ -125,7 +125,7 @@ contract Verifier with Deployable {
     }
 
 <%   if (rem > 0) { -%>
-    // Tail for <%= rem %> elements
+    // Tail batch for the remaining <%= rem %> elements
     let tail: Slice = blsG1Multiexp_<%= rem %>(
 <%     for (let j = 0; j < rem; j++) { -%>
       ic(done + <%= j+1 %>), pubInputs.get(done + <%= j %>)!!<%= j < rem-1 ? "," : "" %>
@@ -140,14 +140,14 @@ contract Verifier with Deployable {
     // Add the constant term
     cpub = blsG1Add(cpub, IC0);
 
-    // Check that the map is finished (no key nPublic)
+    // Check that no extra public inputs exist
 <% if (nPublic > 0) { -%>
     nativeThrowIf(ERR_TOO_MANY_PUBLICS, pubInputs.exists(<%= nPublic %>));
 <% } else { -%>
     nativeThrowIf(ERR_TOO_MANY_PUBLICS, pubInputs.exists(0));
 <% } -%>
 
-    // pairing
+    // Perform pairing check
     let piANeg: Slice = blsG1Neg(piA);
     let ok: Int = blsPairing(
       cpub,       vk_gamma_2,

@@ -82,23 +82,23 @@ slice bls_g1_multiexp_<%= k %>(
     int res = 0;
 
 <% if (nPublic === 0) { -%>
-    ;; без публичных входов: cpub = IC0
+    ;; no public inputs: cpub = IC0
     slice cpub = verifier::IC0;
 <% } else { -%>
 
-    ;; извлекаем публичные входы по ключам 0..nPublic-1
+    ;; extract public inputs by keys 0..nPublic-1
 <% for (let i = 0; i < nPublic; i++) { -%>
     (slice input<%= i %>, int ok<%= i %>) = pubInputs~udict_delete_get?(verifier::publicInputKeyLen, <%= i %>);
     throw_unless(verifier::err::public_not_present, ok<%= i %>);
     int val<%= i %> = input<%= i %>~load_uint(256);
 <% } -%>
 
-    ;; убеждаемся, что в dict ничего не осталось
+    ;; ensure the dict is now empty
     throw_unless(verifier::err::too_many_publics, null?(pubInputs));
 
-    ;; собираем cpub через batched MULTIEXP и суммирование
+    ;; assemble cpub via batched MULTIEXP and summation
 <%
-let cursor = 1; // IC1..ICnPublic используются с val0..valN-1
+let cursor = 1; // IC1..ICnPublic are used with val0..valN-1
 let batchIndex = 0;
 -%>
 <% if (sizes.length === 1) { 
@@ -127,7 +127,7 @@ let batchIndex = 0;
 <%   }); -%>
 <% } -%>
 
-    ;; добавляем свободный член IC0
+    ;; add the free term IC0
     cpub = bls_g1_add(cpub, verifier::IC0);
 <% } -%>
 

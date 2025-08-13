@@ -1,6 +1,6 @@
 {
   "name": "export-ton-verifier",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "description": "Tool for generating a Groth16 verifier code for the TON blockchain from SnarkJS .zkey files.",
   "homepage": "https://github.com/mysteryon88/export-ton-verifier#readme",
   "bugs": {
@@ -24,25 +24,24 @@
   "license": "MIT",
   "author": "white_coon",
   "type": "module",
-  "main": "index.js",
-  "types": "./index.d.ts",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "import": "./index.js",
-      "require": "./index.cjs"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
     }
   },
   "bin": {
-    "export-ton-verifier": "./src/cli.js"
+    "export-ton-verifier": "./dist/cli.js"
   },
   "files": [
-    "index.js",
-    "index.cjs",
-    "index.d.ts",
-    "src",
-    "dist-cjs",
-    "cli.js",
-    "templates"
+    "dist",
+    "templates",
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "build": "npx tsup && npm pack"

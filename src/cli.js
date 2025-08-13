@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+
 import fs from "fs";
 import fsp from "fs/promises";
 import path from "path";
@@ -167,7 +168,7 @@ async function main() {
 
   const lang = parseTemplateFlag(flags); // 'func' | 'tolk' | 'tact'
   const templateFilename = templateFileFor(lang);
-  const templatePath = path.join(__dirname, `./templates/${templateFilename}`);
+  const templatePath = path.join(__dirname, `../templates/${templateFilename}`);
 
   const wrapperDestIndex = flags.indexOf("--wrapper-dest");
   const force = flags.includes("--force");

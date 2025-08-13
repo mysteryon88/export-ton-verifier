@@ -1,3 +1,4 @@
+// @ts-ignore
 import { Dictionary } from "@ton/core";
 
 export function g1Compressed(curve: any, p1Raw: unknown): string;

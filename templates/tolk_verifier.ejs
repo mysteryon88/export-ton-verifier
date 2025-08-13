@@ -26,7 +26,7 @@ const `verifier::nPublic` = <%= nPublic %>
 const `verifier::err::public_not_present` = 257
 const `verifier::err::too_many_publics` = 258
 
-// bls intrinsics
+// BLS intrinsics
 @pure
 fun blsG1Add(x: slice, y: slice): slice
     asm "BLS_G1_ADD";
@@ -90,22 +90,22 @@ fun groth16Verify(
     var res: int = 0;
 
 <% if (nPublic === 0) { -%>
-    // без публичных входов: cpub = IC0
+    // No public inputs: cpub = IC0
     var cpub: slice = `verifier::IC0`;
 <% } else { -%>
-    // извлекаем публичные входы по ключам 0..nPublic-1
+    // Extract public inputs by keys 0..nPublic-1
 <% for (let i = 0; i < nPublic; i++) { -%>
     var (input<%= i %>: slice?, ok<%= i %>: bool) = pubInputs.uDictDeleteAndGet(`verifier::publicInputKeyLen`, <%= i %>);
     assert(ok<%= i %>) throw `verifier::err::public_not_present`;
     var val<%= i %>: int = input<%= i %>!.loadUint(256);
 <% } -%>
 
-    // убеждаемся, что в dict ничего не осталось
+    // Ensure that the dict has no remaining entries
     assert((pubInputs == null)) throw `verifier::err::too_many_publics`;
 
-    // собираем cpub через batched MULTIEXP и суммирование
+    // Assemble cpub via batched MULTIEXP and summation
 <%
-let cursor = 1; // IC1..ICnPublic соответствуют val0..val(n-1)
+let cursor = 1; // IC1..ICnPublic correspond to val0..val(n-1)
 -%>
 <% if (sizes.length === 1) { 
    const k = sizes[0]; -%>
@@ -132,11 +132,11 @@ let cursor = 1; // IC1..ICnPublic соответствуют val0..val(n-1)
 <%   }); -%>
 <% } -%>
 
-    // добавляем свободный член IC0
+    // Add the constant term IC0
     cpub = blsG1Add(cpub, `verifier::IC0`);
 <% } -%>
 
-    // pairing check
+    // Pairing check
     var piANeg: slice = blsG1Neg(piA);
     var a: int = blsPairing(
         cpub,                 `verifier::vk_gamma_2`,
@@ -163,7 +163,7 @@ fun verify(inMsgBody: slice): int {
     return groth16Verify(piA, piB, piC, pubInputs);
 }
 
-// in the future, use: fun onInternalMessage(in: InMessage)
+// In the future, use: fun onInternalMessage(in: InMessage)
 fun onInternalMessage(myBalance: int, msgValue: int, inMsgFull: cell, inMsgBody: slice) {
     if (inMsgBody.isEmpty()) {
         return;
