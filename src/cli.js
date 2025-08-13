@@ -3,7 +3,7 @@ import fs from "fs";
 import fsp from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
-import { generateVerifier } from "./lib.js";
+import { generateVerifier } from "./generateVerifier.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

@@ -13,17 +13,13 @@ Target languages **FunC**, **Tolk**, and **Tact** are supported, selectable via 
 npm install export-ton-verifier
 
 # Help
-npx  export-ton-verifier --help
+npx export-ton-verifier --help
 ```
 
 ## Import as a library
 
 ```ts
-import { g1Compressed, g2Compressed } from "export-ton-verifier";
-
-// OR
-
-const { g1Compressed, g2Compressed } = require("export-ton-verifier");
+import { dictFromInputList, groth16CompressProof } from 'export-ton-verifier';
 ```
 
 ## Usage CLI

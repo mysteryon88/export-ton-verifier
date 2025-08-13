@@ -1,7 +1,7 @@
 {
   "name": "export-ton-verifier",
-  "version": "1.2.1",
-  "description": "Tool for generating a Groth16 verifier code for the TON blockchain from Circom .zkey files.",
+  "version": "1.2.2",
+  "description": "Tool for generating a Groth16 verifier code for the TON blockchain from SnarkJS .zkey files.",
   "homepage": "https://github.com/mysteryon88/export-ton-verifier#readme",
   "bugs": {
     "url": "https://github.com/mysteryon88/export-ton-verifier/issues"
@@ -10,7 +10,7 @@
     "type": "git",
     "url": "git+https://github.com/mysteryon88/export-ton-verifier.git"
   },
-   "keywords": [
+  "keywords": [
     "zksnark",
     "groth16",
     "ton",
@@ -48,6 +48,7 @@
     "build": "npx tsup && npm pack"
   },
   "dependencies": {
+    "@ton/core": "^0.61.0",
     "ejs": "^3.1.10",
     "ffjavascript": "^0.3.1",
     "snarkjs": "^0.7.5"
