@@ -38,10 +38,6 @@ fun blsPairing(x1: slice, y1: slice, x2: slice, y2: slice, x3: slice, y3: slice,
     asm "BLS_PAIRING";
 
 <%
-/*
-  План батчинга MULTIEXP.
-  Правило: максимум 7 пар (x_i, y_i) за один вызов.
-*/
 const maxBatch = 7;
 let sizes = [];
 if (nPublic <= 0) {

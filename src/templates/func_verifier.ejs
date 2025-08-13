@@ -32,10 +32,6 @@ slice bls_g1_neg(slice x) asm "BLS_G1_NEG";
 int bls_pairing(slice x1, slice y1, slice x2, slice y2, slice x3, slice y3, slice x4, slice y4, int n) asm "BLS_PAIRING";
 
 <%
-/*
-  Определяем, какие размеры батчей multiexp понадобятся.
-  Правило: макс. 7 пар за вызов.
-*/
 const maxBatch = 7;
 let sizes = [];
 if (nPublic <= 0) {
@@ -48,7 +44,7 @@ if (nPublic <= 0) {
   const rem = nPublic % maxBatch;
   if (rem > 0) sizes.push(rem);
 }
-/* Уникальные размеры для объявлений */
+
 const uniqSizes = [...new Set(sizes)];
 -%>
 
@@ -114,8 +110,8 @@ let batchIndex = 0;
         , <%= k %>
     );
 <% } else { 
-   /* несколько батчей: первый и последующие добавляем */
-   let globalIdx = 0;
+
+    let globalIdx = 0;
    sizes.forEach((k, bi) => { -%>
 <%     if (bi === 0) { -%>
     slice cpub = bls_g1_multiexp_<%= k %>(

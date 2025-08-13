@@ -1,13 +1,8 @@
 import "@stdlib/deploy";
 
+// ASM intrinsics
 asm fun blsG1Add(x: Slice, y: Slice): Slice { BLS_G1_ADD }
 asm fun blsG1Neg(x: Slice): Slice { BLS_G1_NEG }
-asm fun blsG1Multiexp(
-<% for (let i = 1; i <= nPublic; i++) { -%>
-  x<%= i %>: Slice, y<%= i %>: Int,
-<% } -%>
-  n: Int
-): Slice { BLS_G1_MULTIEXP }
 asm fun blsPairing(
   x1: Slice, y1: Slice,
   x2: Slice, y2: Slice,
@@ -16,65 +11,149 @@ asm fun blsPairing(
   n: Int
 ): Int { BLS_PAIRING }
 
+<%
+/* MULTIEXP batching: maximum 7 pairs per call */
+const maxBatch = 7;
+let sizes = [];
+if (nPublic <= 0) {
+  sizes = [];
+} else if (nPublic <= maxBatch) {
+  sizes = [nPublic];
+} else {
+  const full = Math.floor(nPublic / maxBatch);
+  for (let i = 0; i < full; i++) sizes.push(maxBatch);
+  const rem = nPublic % maxBatch;
+  if (rem > 0) sizes.push(rem);
+}
+const uniqSizes = [...new Set(sizes)];
+-%>
+
+<% uniqSizes.forEach((k) => { -%>
+asm fun blsG1Multiexp_<%= k %>(
+<% for (let i = 1; i <= k; i++) { -%>
+  x<%= i %>: Slice, y<%= i %>: Int<%= i<k ? "," : "" %>
+<% } -%>
+  , n: Int
+): Slice { BLS_G1_MULTIEXP }
+<% }); -%>
+
+// sizes
 const P1_SIZE: Int = 48 * 8;
 const P2_SIZE: Int = 96 * 8;
 
+// vk constants
 const vk_gamma_2: Slice = rawSlice("<%= vk_gamma_2 %>");
 const vk_delta_2: Slice = rawSlice("<%= vk_delta_2 %>");
 const vk_alpha_1: Slice = rawSlice("<%= vk_alpha_1 %>");
-const vk_beta_2 : Slice = rawSlice("<%= vk_beta_2  %>");
+const vk_beta_2 : Slice = rawSlice("<%= vk_beta_2 %>");
 
+// IC constants (IC0 — constant term)
 <% for (let i = 0; i < IC.length; i++) { -%>
 const IC<%= i %>: Slice = rawSlice("<%= IC[i] %>");
 <% } -%>
 
+// ERRORS
+const ERR_PUBLIC_NOT_PRESENT: Int = 257;
+const ERR_TOO_MANY_PUBLICS: Int = 258;
+const ERR_INDEX_OUT_OF_RANGE: Int = 259;
+
+<% if (nPublic > 7) { -%>
+// IC selection helper by index: 1 -> IC1, 2 -> IC2, ...
+fun ic(idx: Int): Slice {
+<% for (let i = 1; i < IC.length; i++) { -%>
+  if (idx == <%= i %>) { return IC<%= i %>; }
+<% } -%>
+  return IC0; // stub
+  // nativeThrow(ERR_INDEX_OUT_OF_RANGE);
+}
+<% } -%>
+
+// message
 message Verify {
   piA: Slice;
   piB: Slice;
   piC: Slice;
-<% for (let i = 0; i < nPublic; i++) { -%>
-  pubInput<%= i %>: Int;
-<% } -%>
+  pubInputs: map<Int as uint32, Int>;
 }
 
 contract Verifier with Deployable {
 
   receive(msg: Verify) {
-    let res = self.groth16Verify(
-      msg.piA,
-      msg.piB,
-      msg.piC,
-<% for (let i = 0; i < nPublic; i++) { -%>
-      msg.pubInput<%= i %><%= i + 1 < nPublic ? "," : "" %>
-<% } -%>
-    );
+    let res = self.groth16Verify(msg.piA, msg.piB, msg.piC, msg.pubInputs);
   }
 
   fun groth16Verify(
     piA: Slice,
     piB: Slice,
     piC: Slice,
-<% for (let i = 0; i < nPublic; i++) { -%>
-    pubInput<%= i %>: Int<%= i + 1 < nPublic ? "," : "" %>
-<% } -%>
+    pubInputs: map<Int as uint32, Int>
   ): Bool {
-<% if (nPublic > 0) { -%>
-    let cpub: Slice = blsG1Multiexp(
-<% for (let i = 1; i <= nPublic; i++) { -%>
-      IC<%= i %>, pubInput<%= i - 1 %>,
-<% } -%>
-      <%= nPublic %>
-    );
-    cpub = blsG1Add(cpub, IC0);
-<% } else { -%>
+<% if (nPublic === 0) { -%>
+    // No public inputs
     let cpub: Slice = IC0;
+<% } else if (nPublic <= 7) { -%>
+    // Single batch (no loop and no ic())
+    let cpub: Slice = blsG1Multiexp_<%= nPublic %>(
+<%   for (let i = 0; i < nPublic; i++) { -%>
+      IC<%= i+1 %>, pubInputs.get(<%= i %>)!!<%= i < nPublic-1 ? "," : "" %>
+<%   } -%>
+      , <%= nPublic %>
+    );
+<% } else { 
+   const full = Math.floor(nPublic / 7);
+   const rem = nPublic % 7;
+-%>
+    // Loop over full batches of 7
+    let done: Int = 0;
+    let batchesLeft: Int = <%= full %>;
+    let cpub: Slice = IC0; // start with neutral value and sum the batch results
+    while (batchesLeft > 0) {
+      let tmp: Slice = blsG1Multiexp_7(
+        ic(done + 1), pubInputs.get(done + 0)!!,
+        ic(done + 2), pubInputs.get(done + 1)!!,
+        ic(done + 3), pubInputs.get(done + 2)!!,
+        ic(done + 4), pubInputs.get(done + 3)!!,
+        ic(done + 5), pubInputs.get(done + 4)!!,
+        ic(done + 6), pubInputs.get(done + 5)!!,
+        ic(done + 7), pubInputs.get(done + 6)!!,
+        7
+      );
+      // If this is the first batch — replace IC0 with tmp, otherwise sum up
+      cpub = (done == 0) ? tmp : blsG1Add(cpub, tmp);
+      done += 7;
+      batchesLeft -= 1;
+    }
+
+<%   if (rem > 0) { -%>
+    // Tail for <%= rem %> elements
+    let tail: Slice = blsG1Multiexp_<%= rem %>(
+<%     for (let j = 0; j < rem; j++) { -%>
+      ic(done + <%= j+1 %>), pubInputs.get(done + <%= j %>)!!<%= j < rem-1 ? "," : "" %>
+<%     } -%>
+      , <%= rem %>
+    );
+    cpub = blsG1Add(cpub, tail);
+    done += <%= rem %>;
+<%   } -%>
 <% } -%>
+
+    // Add the constant term
+    cpub = blsG1Add(cpub, IC0);
+
+    // Check that the map is finished (no key nPublic)
+<% if (nPublic > 0) { -%>
+    nativeThrowIf(ERR_TOO_MANY_PUBLICS, pubInputs.exists(<%= nPublic %>));
+<% } else { -%>
+    nativeThrowIf(ERR_TOO_MANY_PUBLICS, pubInputs.exists(0));
+<% } -%>
+
+    // pairing
     let piANeg: Slice = blsG1Neg(piA);
     let ok: Int = blsPairing(
-      cpub,        vk_gamma_2,
-      piANeg,      piB,
-      piC,         vk_delta_2,
-      vk_alpha_1,  vk_beta_2,
+      cpub,       vk_gamma_2,
+      piANeg,     piB,
+      piC,        vk_delta_2,
+      vk_alpha_1, vk_beta_2,
       4
     );
     return ok != 0;
@@ -84,15 +163,8 @@ contract Verifier with Deployable {
     piA: Slice,
     piB: Slice,
     piC: Slice,
-<% for (let i = 0; i < nPublic; i++) { -%>
-    pubInput<%= i %>: Int<%= i + 1 < nPublic ? "," : "" %>
-<% } -%>
+    pubInputs: map<Int as uint32, Int>
   ): Bool {
-    return self.groth16Verify(
-      piA, piB, piC,
-<% for (let i = 0; i < nPublic; i++) { -%>
-      pubInput<%= i %><%= i + 1 < nPublic ? "," : "" %>
-<% } -%>
-    );
+    return self.groth16Verify(piA, piB, piC, pubInputs);
   }
 }
