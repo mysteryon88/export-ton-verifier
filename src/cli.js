@@ -12,18 +12,19 @@ const __dirname = path.dirname(__filename);
 function printHelp() {
   console.log(`
 Usage:
-  export-ton-verifier <zkeyPath> <outputPath> [--func | --tolk | --tact] [--wrapper-dest <destPath>] [--force]
+  export-ton-verifier <inputPath> <outputPath> [--func | --tolk | --tact] [--vk] [--wrapper-dest <destPath>] [--force]
   export-ton-verifier import-wrapper <destPath> [--force]
 
 Description:
-  1) Generates a Groth16 verifier for the TON blockchain from a Circom .zkey file
+  1) Generates a Groth16 verifier for the TON blockchain from:
+     - Circom .zkey file, or
+     - verification_key.json (snarkjs/gnark style)
   2) (Optional) Can also copy a TypeScript wrapper template (templates/Verifier.ts)
-     to your project. By default, the wrapper is NOT imported anywhere; you decide
-     its destination and handle imports yourself.
+     to your project. By default, the wrapper is NOT imported anywhere; you decide its destination.
 
 Arguments:
-  zkeyPath        Path to the .zkey file (required for main command)
-  outputPath      Path to save the generated verifier file (required for main command)
+  inputPath       Path to the .zkey OR verification_key.json
+  outputPath      Path to save the generated verifier file
 
 Subcommands:
   import-wrapper  Copies templates/Verifier.ts to <destPath> (file or directory).
@@ -31,6 +32,7 @@ Subcommands:
 
 Options:
   -h, --help                Show this help message and exit
+  --vk                      Force treat <inputPath> as verification_key.json (skip .zkey export)
   --func                    Use FunC template (templates/func_verifier.ejs) [default]
   --tolk                    Use Tolk template (templates/tolk_verifier.ejs)
   --tact                    Use Tact template (templates/tact_verifier.ejs)
@@ -38,19 +40,22 @@ Options:
   --force                   Overwrite existing file when used with 'import-wrapper' or '--wrapper-dest'
 
 Examples:
-  # Just generate FunC verifier from .zkey (default template)
+  # From .zkey, FunC by default:
   npx export-ton-verifier ./circuits/verifier.zkey ./verifier.fc
 
-  # Generate Tolk verifier
-  npx export-ton-verifier ./circuits/verifier.zkey ./verifier.tolk --tolk
+  # From verification_key.json (auto-detected by .json):
+  npx export-ton-verifier ./circuits/verification_key.json ./verifier.fc
 
-  # Generate Tact verifier
+  # Force JSON mode (even if extension is not .json):
+  npx export-ton-verifier ./vk.txt ./verifier.tolk --tolk --vk
+
+  # Generate Tact verifier:
   npx export-ton-verifier ./circuits/verifier.zkey ./verifier.tact --tact
 
-  # Generate and also drop the TypeScript wrapper into ./wrappers/
-  npx export-ton-verifier ./circuits/verifier.zkey ./verifier.fc --func --wrapper-dest ./wrappers/ --force
+  # Generate and also drop the TypeScript wrapper:
+  npx export-ton-verifier ./circuits/verification_key.json ./verifier.fc --func --wrapper-dest ./wrappers/ --force
 
-  # Only copy the TypeScript wrapper
+  # Only copy the TypeScript wrapper:
   npx export-ton-verifier import-wrapper ./wrappers/Verifier.ts --force
 `);
 }
@@ -103,7 +108,6 @@ function parseTemplateFlag(args) {
     process.exit(1);
   }
   if (chosen.length === 0) return "func"; // default
-  // strip leading "--"
   return chosen[0].slice(2); // 'func' | 'tolk' | 'tact'
 }
 
@@ -164,9 +168,9 @@ async function main() {
     process.exit(1);
   }
 
-  const [zkeyPath, outputPath] = positional;
+  const [inputPath, outputPath] = positional;
 
-  const lang = parseTemplateFlag(flags); // 'func' | 'tolk' | 'tact'
+  const lang = parseTemplateFlag(flags);
   const templateFilename = templateFileFor(lang);
   const templatePath = path.join(__dirname, `../templates/${templateFilename}`);
 
@@ -175,8 +179,8 @@ async function main() {
   const wrapperDest =
     wrapperDestIndex >= 0 ? args[args.indexOf("--wrapper-dest") + 1] : null;
 
-  if (!fileExists(zkeyPath)) {
-    console.error(`❌ .zkey file not found: ${zkeyPath}`);
+  if (!fileExists(inputPath)) {
+    console.error(`❌ Input file not found: ${inputPath}`);
     process.exit(1);
   }
   if (!fileExists(templatePath)) {
@@ -187,8 +191,9 @@ async function main() {
     process.exit(1);
   }
 
+  const forceJson = flags.includes("--vk");
   try {
-    await generateVerifier(zkeyPath, templatePath, outputPath);
+    await generateVerifier(inputPath, templatePath, outputPath, { forceJson });
 
     if (wrapperDest) {
       const wrapperSrc = path.join(__dirname, "./templates/Verifier.ts");
@@ -199,7 +204,7 @@ async function main() {
       await copyWrapper(wrapperSrc, wrapperDest, { force });
     }
   } catch (err) {
-    console.error("❌ Error:", err);
+    console.error("❌ Error:", err?.message ?? err);
     process.exit(1);
   }
 }

@@ -1,10 +1,11 @@
 # Export TON Verifier
 
-Export TON Verifier is a CLI tool and JavaScript library for generating **Groth16 bls12-381** smart contract verifiers for the TON blockchain from `.zkey` files.
+**Export TON Verifier** is a CLI tool and JavaScript library for generating **Groth16 bls12-381** smart contract verifiers for the TON blockchain from `.zkey` or `.json` verification key files.
 
-It is essentially an integration with the **snarkjs** library and supports circuits generated in **Circom** and **Noname**.
+It integrates with the **snarkjs** library and supports circuits built with **Circom**, **Noname**, and **gnark** (via `verification_key.json`).
+This allows you, for example, to generate a verifier contract that checks **gnark** proofs in a format compatible with **snarkjs**.
 
-Target languages **FunC**, **Tolk**, and **Tact** are supported, selectable via the `--func`, `--tolk`, or `--tact` flags.
+Verifier code can be generated for three TON languages: **FunC**, **Tolk**, and **Tact** (selected via the `--func`, `--tolk`, or `--tact` flags).
 
 ## Installation
 
@@ -24,19 +25,22 @@ import { dictFromInputList, groth16CompressProof } from 'export-ton-verifier';
 ## Usage CLI
 
 ```sh
-# Just generate FunC verifier from .zkey (default template)
+# From .zkey, FunC by default:
 npx export-ton-verifier ./circuits/verifier.zkey ./verifier.fc
 
-# Generate Tolk verifier
-npx export-ton-verifier ./circuits/verifier.zkey ./verifier.tolk --tolk
+# From verification_key.json (auto-detected by .json):
+npx export-ton-verifier ./circuits/verification_key.json ./verifier.fc
 
-# Generate Tact verifier
+# Force JSON mode (even if extension is not .json):
+npx export-ton-verifier ./vk.txt ./verifier.tolk --tolk --vk
+
+# Generate Tact verifier:
 npx export-ton-verifier ./circuits/verifier.zkey ./verifier.tact --tact
 
-# Generate and also drop the TypeScript wrapper into ./wrappers/
-npx export-ton-verifier ./circuits/verifier.zkey ./verifier.func --func --wrapper-dest ./wrappers/ --force
+# Generate and also drop the TypeScript wrapper:
+npx export-ton-verifier ./circuits/verification_key.json ./verifier.fc --func --wrapper-dest ./wrappers/ --force
 
-# Only copy the TypeScript wrapper
+# Only copy the TypeScript wrapper:
 npx export-ton-verifier import-wrapper ./wrappers/Verifier.ts --force
 ```
 
