@@ -49,3 +49,4 @@ npx export-ton-verifier import-wrapper ./wrappers/Verifier.ts --force
 - [zkTokenTip/zk-ton-examples](https://github.com/zkTokenTip/zk-ton-examples)
 - [Circom](https://docs.circom.io/)
 - [Noname](https://github.com/zksecurity/noname)
+- [gnark](https://github.com/Consensys/gnark)
