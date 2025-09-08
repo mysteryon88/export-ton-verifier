@@ -25,6 +25,8 @@ const int verifier::nPublic = <%= nPublic %>;
 ;; error codes
 const int verifier::err::public_not_present = 257;
 const int verifier::err::too_many_publics = 258;
+const int verifier::err::index_out_of_range = 259;
+const int verifier::err::wrong_proof = 260;
 
 ;; bls intrinsics
 slice bls_g1_add(slice x, slice y) asm "BLS_G1_ADD";
@@ -179,6 +181,7 @@ let batchIndex = 0;
 
     if (op == op::verify) {
         int res = verify(in_msg_body);
+        throw_unless(verifier::err::wrong_proof, res == 1);
         return ();
     }
     throw(0xffff);

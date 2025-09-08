@@ -1,6 +1,6 @@
 {
   "name": "export-ton-verifier",
-  "version": "1.2.5",
+  "version": "1.2.6",
   "description": "Tool for generating a Groth16 verifier code for the TON blockchain from SnarkJS .zkey files.",
   "homepage": "https://github.com/mysteryon88/export-ton-verifier#readme",
   "bugs": {

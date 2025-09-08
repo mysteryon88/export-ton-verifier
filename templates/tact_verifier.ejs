@@ -56,6 +56,7 @@ const IC<%= i %>: Slice = rawSlice("<%= IC[i] %>");
 const ERR_PUBLIC_NOT_PRESENT: Int = 257;
 const ERR_TOO_MANY_PUBLICS: Int = 258;
 const ERR_INDEX_OUT_OF_RANGE: Int = 259;
+const ERR_WRONG_PROOF: Int = 260;
 
 <% if (nPublic > 7) { -%>
 // IC selection helper by index: 1 -> IC1, 2 -> IC2, ...
@@ -80,6 +81,7 @@ contract Verifier with Deployable {
 
   receive(msg: Verify) {
     let res = self.groth16Verify(msg.piA, msg.piB, msg.piC, msg.pubInputs);
+    nativeThrowUnless(ERR_WRONG_PROOF, res);
   }
 
   fun groth16Verify(
