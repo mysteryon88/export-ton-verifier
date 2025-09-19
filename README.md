@@ -2,8 +2,8 @@
 
 **Export TON Verifier** is a CLI tool and JavaScript library for generating **Groth16 bls12-381** smart contract verifiers for the TON blockchain from `.zkey` or `.json` verification key files.
 
-It integrates with the **snarkjs** library and supports circuits built with **Circom**, **Noname**, and **gnark** (via `verification_key.json`).
-This allows you, for example, to generate a verifier contract that checks **gnark** proofs in a format compatible with **snarkjs**.
+It integrates with the **snarkjs** library and supports circuits built with **Circom**, **Noname**, **Gnark** and **Arkworks** (via `verification_key.json`).
+This allows you, for example, to generate a verifier contract that checks **Gnark** or **Arkworks** proofs.
 
 Verifier code can be generated for three TON languages: **FunC**, **Tolk**, and **Tact** (selected via the `--func`, `--tolk`, or `--tact` flags).
 
@@ -19,7 +19,7 @@ npx export-ton-verifier --help
 ## Import as a library
 
 ```ts
-import { dictFromInputList, groth16CompressProof } from 'export-ton-verifier';
+import { dictFromInputList, groth16CompressProof } from "export-ton-verifier";
 ```
 
 ## Usage CLI
@@ -46,7 +46,14 @@ npx export-ton-verifier import-wrapper ./wrappers/Verifier.ts --force
 
 ## References
 
-- [zkTokenTip/zk-ton-examples](https://github.com/zkTokenTip/zk-ton-examples)
-- [Circom](https://docs.circom.io/)
-- [Noname](https://github.com/zksecurity/noname)
-- [gnark](https://github.com/Consensys/gnark)
+- Examples
+  - [zk-examples/zk-ton-examples](https://github.com/zk-examples/zk-ton-examples)
+  - [zk-examples/zkJetton](https://github.com/zk-examples/zkJetton)
+- Export of proof and verification key in JSON format compatible with snarkjs
+  - [gnark-to-snarkjs](https://github.com/mysteryon88/gnark-to-snarkjs)
+  - [ark-snarkjs](https://github.com/mysteryon88/ark-snarkjs)
+- Frameworks verified for compatibility
+  - [Circom](https://docs.circom.io/)
+  - [Noname](https://github.com/zksecurity/noname)
+  - [Gnark](https://github.com/Consensys/gnark)
+  - [Arkworks](https://github.com/arkworks-rs)
