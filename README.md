@@ -45,7 +45,8 @@ npx export-ton-verifier import-wrapper ./wrappers/Verifier.ts --force
 ```
 
 ## References
-
+- [TON Documentation](https://docs.ton.org/contract-dev/zero-knowledge)
+- [Tact Documentation](https://docs.tact-lang.org/cookbook/zk-proofs/)
 - Examples
   - [zk-examples/zk-ton-examples](https://github.com/zk-examples/zk-ton-examples)
   - [zk-examples/zkJetton](https://github.com/zk-examples/zkJetton)
