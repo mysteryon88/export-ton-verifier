@@ -60,7 +60,7 @@ export class Verifier implements Contract {
     await provider.internal(via, {
       value: opts.value,
       sendMode: SendMode.PAY_GAS_SEPARATELY,
-      body: this.verifyBody(opts),
+      body: this.buildVerifyBody(opts),
     });
   }
 
@@ -75,31 +75,27 @@ export class Verifier implements Contract {
     return dict;
   }
 
-  verifyBody(opts: {
+  buildVerifyBody(opts: {
     pi_a: Buffer;
     pi_b: Buffer;
     pi_c: Buffer;
     pubInputs: bigint[];
-    value: bigint;
-    queryID?: number;
-  }): Cell {
-    return beginCell()
+  }) {
+    const piAcell = beginCell().storeBuffer(opts.pi_a).endCell();
+    const piBcell = beginCell().storeBuffer(opts.pi_b).endCell();
+    const piCcell = beginCell().storeBuffer(opts.pi_c).endCell();
+
+    const pubDict = this.dictFromInputList(opts.pubInputs);
+
+    const body = beginCell()
       .storeUint(Opcodes.verify, 32)
-      .storeUint(opts.queryID ?? 0, 64)
-      .storeRef(
-        beginCell()
-          .storeBuffer(opts.pi_a)
-          .storeRef(
-            beginCell()
-              .storeBuffer(opts.pi_b)
-              .storeRef(
-                beginCell()
-                  .storeBuffer(opts.pi_c)
-                  .storeDict(this.dictFromInputList(opts.pubInputs))
-              )
-          )
-      )
+      .storeRef(piAcell)
+      .storeRef(piBcell)
+      .storeRef(piCcell)
+      .storeDict(pubDict)
       .endCell();
+
+    return body;
   }
 
   async getVerify(
@@ -130,12 +126,7 @@ export class Verifier implements Contract {
         .endCell(),
     } as TupleItem;
 
-    const result = await provider.get("get_verify", [
-      pi_a,
-      pi_b,
-      pi_c,
-      pubInputs,
-    ]);
+    const result = await provider.get("verify", [pi_a, pi_b, pi_c, pubInputs]);
     return result.stack.readBoolean();
   }
 }
