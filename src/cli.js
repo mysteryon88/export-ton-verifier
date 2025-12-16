@@ -142,7 +142,7 @@ async function main() {
       process.exit(1);
     }
     const force = args.includes("--force");
-    const wrapperSrc = path.join(__dirname, "./templates/Verifier.ts");
+    const wrapperSrc = path.join(__dirname, "../templates/Verifier.ts");
 
     if (!fileExists(wrapperSrc)) {
       console.error(`❌ Wrapper template not found: ${wrapperSrc}`);
@@ -196,7 +196,7 @@ async function main() {
     await generateVerifier(inputPath, templatePath, outputPath, { forceJson });
 
     if (wrapperDest) {
-      const wrapperSrc = path.join(__dirname, "./templates/Verifier.ts");
+      const wrapperSrc = path.join(__dirname, "../templates/Verifier.ts");
       if (!fileExists(wrapperSrc)) {
         console.error(`❌ Wrapper template not found: ${wrapperSrc}`);
         process.exit(1);
