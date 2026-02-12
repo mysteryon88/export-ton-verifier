@@ -1,7 +1,7 @@
 {
   "name": "export-ton-verifier",
-  "version": "1.2.9",
-  "description": "Tool for generating a Groth16 verifier code for the TON blockchain from SnarkJS .zkey files.",
+  "version": "2.0.0",
+  "description": "Tool for generating Groth16 and PLONK verifier code for the TON blockchain from SnarkJS .zkey files.",
   "homepage": "https://github.com/mysteryon88/export-ton-verifier#readme",
   "bugs": {
     "url": "https://github.com/mysteryon88/export-ton-verifier/issues"
@@ -13,6 +13,7 @@
   "keywords": [
     "zksnark",
     "groth16",
+    "plonk",
     "ton",
     "func",
     "tact",
@@ -48,11 +49,11 @@
   },
   "dependencies": {
     "@ton/core": "~0",
-    "ejs": "^3.1.10",
+    "ejs": "^4.0.1",
     "ffjavascript": "^0.3.1",
-    "snarkjs": "^0.7.5"
+    "snarkjs": "^0.7.6"
   },
   "devDependencies": {
-    "tsup": "^8.5.0"
+    "tsup": "^8.5.1"
   }
 }
