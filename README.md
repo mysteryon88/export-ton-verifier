@@ -57,7 +57,8 @@ npx export-ton-verifier import-wrapper ./wrappers/ --plonk --force
 - [TON Documentation](https://docs.ton.org/contract-dev/zero-knowledge)
 - [Tact Documentation](https://docs.tact-lang.org/cookbook/zk-proofs/)
 - Examples
-  - [zk-examples/zk-ton-examples](https://github.com/zk-examples/zk-ton-examples)
+  - [zk-examples/zk-ton-examples (Groth16)](https://github.com/zk-examples/zk-ton-examples)
+  - [zk-examples/zk-ton-plonk (PLONK)](https://github.com/zk-examples/zk-ton-plonk)
   - [zk-examples/zkJetton](https://github.com/zk-examples/zkJetton)
 - Export of proof and verification key in JSON format compatible with snarkjs
   - [gnark-to-snarkjs](https://github.com/mysteryon88/gnark-to-snarkjs)
