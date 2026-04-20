@@ -56,16 +56,6 @@ npx export-ton-verifier import-wrapper ./wrappers/ --groth16 --func --force
 npx export-ton-verifier import-wrapper ./wrappers/ --plonk --func --force
 ```
 
-## Tests
-
-```bash
-npm test
-```
-
-- `test/tolk_groth16_template.test.js` checks that the rendered Tolk Groth16 verifier keeps `array<int>` in the getter interface, uses `RemainingBitsAndRefs` plus manual payload parsing for internal messages, removes dict-only checks/errors, and emits the expected batching helpers for both small and multi-batch circuits.
-- `test/template_error_constants.test.js` checks that the rendered Groth16 templates do not keep dead error codes/helpers: Func no longer emits `index_out_of_range`, and Tact only emits public-input errors/helpers when they are actually used.
-- `test/wrapper_templates.test.js` checks that `import-wrapper` picks the Func Groth16 wrapper for `--func`, the Tolk Groth16 wrapper for `--tolk`, defaults to the Tolk Groth16 wrapper when no language flag is given, and that the copied files use the expected public-input encoding (`dict` for Func, `array<int>` tuple/array encoding for Tolk).
-
 ## References
 
 - [TON Documentation](https://docs.ton.org/contract-dev/zero-knowledge)
