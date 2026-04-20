@@ -1,3 +1,48 @@
+<%
+const maxBatch = 7;
+let sizes = [];
+
+if (nPublic <= 0) {
+  sizes = [];
+} else if (nPublic <= maxBatch) {
+  sizes = [nPublic];
+} else {
+  const fullBatches = Math.floor(nPublic / maxBatch);
+  for (let i = 0; i < fullBatches; i++) sizes.push(maxBatch);
+  const rem = nPublic % maxBatch;
+  if (rem > 0) sizes.push(rem);
+}
+
+const uniqSizes = [...new Set(sizes)];
+const fullBatches = Math.floor(nPublic / 7);
+const tailSize = nPublic % 7;
+const icConstants = IC
+  .map((point, i) => `const IC${i}: Slice = rawSlice("${point}");`)
+  .join("\n");
+const icSelectorCases = IC
+  .slice(1)
+  .map((_, i) => `  if (idx == ${i + 1}) { return IC${i + 1}; }`)
+  .join("\n");
+const singleBatchArgs = Array.from({ length: nPublic }, (_, i) => {
+  return `      IC${i + 1}, getPub(pubInputs, ${i})`;
+}).join(",\n");
+const fullBatchArgs = Array.from({ length: 7 }, (_, i) => {
+  return `        ic(done + ${i + 1}), getPub(pubInputs, done + ${i})`;
+}).join(",\n");
+const tailBatchArgs = Array.from({ length: tailSize }, (_, i) => {
+  return `      ic(done + ${i + 1}), getPub(pubInputs, done + ${i})`;
+}).join(",\n");
+
+function renderMultiexpDecl(k) {
+  const args = Array.from(
+    { length: k },
+    (_, i) => `  x${i + 1}: Slice, y${i + 1}: Int${i < k - 1 ? "," : ""}`,
+  ).join("\n");
+  return `asm fun blsG1Multiexp_${k}(\n${args}\n  , n: Int\n): Slice { BLS_G1_MULTIEXP }`;
+}
+
+const multiexpDecls = uniqSizes.map((k) => renderMultiexpDecl(k)).join("\n\n");
+%>
 // ASM intrinsics
 asm fun blsG1Add(x: Slice, y: Slice): Slice { BLS_G1_ADD }
 asm fun blsG1Neg(x: Slice): Slice { BLS_G1_NEG }
@@ -9,31 +54,9 @@ asm fun blsPairing(
   n: Int
 ): Int { BLS_PAIRING }
 
-<%
-/* MULTIEXP batching: maximum 7 pairs per call */
-const maxBatch = 7;
-let sizes = [];
-if (nPublic <= 0) {
-  sizes = [];
-} else if (nPublic <= maxBatch) {
-  sizes = [nPublic];
-} else {
-  const full = Math.floor(nPublic / maxBatch);
-  for (let i = 0; i < full; i++) sizes.push(maxBatch);
-  const rem = nPublic % maxBatch;
-  if (rem > 0) sizes.push(rem);
-}
-const uniqSizes = [...new Set(sizes)];
--%>
-
-<% uniqSizes.forEach((k) => { -%>
-asm fun blsG1Multiexp_<%= k %>(
-<% for (let i = 1; i <= k; i++) { -%>
-  x<%= i %>: Slice, y<%= i %>: Int<%= i<k ? "," : "" %>
+<% if (multiexpDecls) { -%>
+<%- multiexpDecls %>
 <% } -%>
-  , n: Int
-): Slice { BLS_G1_MULTIEXP }
-<% }); -%>
 
 // Verification key constants
 const vk_gamma_2: Slice = rawSlice("<%= vk_gamma_2 %>");
@@ -41,28 +64,25 @@ const vk_delta_2: Slice = rawSlice("<%= vk_delta_2 %>");
 const vk_alpha_1: Slice = rawSlice("<%= vk_alpha_1 %>");
 const vk_beta_2 : Slice = rawSlice("<%= vk_beta_2 %>");
 
-// IC constants (IC0 — constant term)
-<% for (let i = 0; i < IC.length; i++) { -%>
-const IC<%= i %>: Slice = rawSlice("<%= IC[i] %>");
-<% } -%>
+// IC constants (IC0 is the constant term)
+<%- icConstants %>
 
 // Error codes
+<% if (nPublic > 0) { -%>
 const ERR_PUBLIC_NOT_PRESENT: Int = 257;
+<% } -%>
 const ERR_TOO_MANY_PUBLICS: Int = 258;
-const ERR_INDEX_OUT_OF_RANGE: Int = 259;
 const ERR_WRONG_PROOF: Int = 260;
 
 <% if (nPublic > 7) { -%>
 // IC selection helper by index: 1 -> IC1, 2 -> IC2, ...
 fun ic(idx: Int): Slice {
-<% for (let i = 1; i < IC.length; i++) { -%>
-  if (idx == <%= i %>) { return IC<%= i %>; }
-<% } -%>
-  return IC0; // Fallback
-  // nativeThrow(ERR_INDEX_OUT_OF_RANGE);
+<%- icSelectorCases %>
+  return IC0; // Unreachable for generated batches
 }
 <% } -%>
 
+<% if (nPublic > 0) { -%>
 // Safe getter for public inputs: throws ERR_PUBLIC_NOT_PRESENT
 fun getPub(pubInputs: map<Int as uint32, Int>, k: Int): Int {
   let v = pubInputs.get(k);
@@ -71,6 +91,7 @@ fun getPub(pubInputs: map<Int as uint32, Int>, k: Int): Int {
   }
   return v!!;
 }
+<% } -%>
 
 // Message definition
 message (0x3b3cca17) Verify {
@@ -96,9 +117,9 @@ contract Verifier {
     pubInputs: map<Int as uint32, Int>
   ): Bool {
 
-    // --- acc = Σ(v_i * IC_{i+1}) (ONLY public-dependent part) ---
+    // acc = sum(v_i * IC_{i+1}) (only the public-dependent part)
     let haveAcc: Bool = false;
-    let acc: Slice = IC0; // placeholder until haveAcc=true
+    let acc: Slice = IC0; // placeholder until haveAcc = true
 
 <% if (nPublic === 0) { -%>
     // No public inputs allowed
@@ -106,9 +127,7 @@ contract Verifier {
 <% } else if (nPublic <= 7) { -%>
     // Single batch (no loop and no ic())
     acc = blsG1Multiexp_<%= nPublic %>(
-<%   for (let i = 0; i < nPublic; i++) { -%>
-      IC<%= i+1 %>, getPub(pubInputs, <%= i %>)<%= i < nPublic-1 ? "," : "" %>
-<%   } -%>
+<%- singleBatchArgs %>
       , <%= nPublic %>
     );
     haveAcc = true;
@@ -116,24 +135,15 @@ contract Verifier {
     // Cheap guard: reject obvious extras
     nativeThrowIf(ERR_TOO_MANY_PUBLICS, pubInputs.exists(<%= nPublic %>));
 
-<% } else {
-   const full = Math.floor(nPublic / 7);
-   const rem = nPublic % 7;
--%>
+<% } else { -%>
     // Loop over full batches of 7
     let done: Int = 0;
-    let batchesLeft: Int = <%= full %>;
+    let batchesLeft: Int = <%= fullBatches %>;
 
     while (batchesLeft > 0) {
       let tmp: Slice = blsG1Multiexp_7(
-        ic(done + 1), getPub(pubInputs, done + 0),
-        ic(done + 2), getPub(pubInputs, done + 1),
-        ic(done + 3), getPub(pubInputs, done + 2),
-        ic(done + 4), getPub(pubInputs, done + 3),
-        ic(done + 5), getPub(pubInputs, done + 4),
-        ic(done + 6), getPub(pubInputs, done + 5),
-        ic(done + 7), getPub(pubInputs, done + 6),
-        7
+<%- fullBatchArgs %>
+        , 7
       );
 
       if (!haveAcc) {
@@ -147,13 +157,11 @@ contract Verifier {
       batchesLeft -= 1;
     }
 
-<%   if (rem > 0) { -%>
-    // Tail batch for remaining <%= rem %>
-    let tail: Slice = blsG1Multiexp_<%= rem %>(
-<%     for (let j = 0; j < rem; j++) { -%>
-      ic(done + <%= j+1 %>), getPub(pubInputs, done + <%= j %>)<%= j < rem-1 ? "," : "" %>
-<%     } -%>
-      , <%= rem %>
+<% if (tailSize > 0) { -%>
+    // Tail batch for remaining <%= tailSize %>
+    let tail: Slice = blsG1Multiexp_<%= tailSize %>(
+<%- tailBatchArgs %>
+      , <%= tailSize %>
     );
 
     if (!haveAcc) {
@@ -163,14 +171,14 @@ contract Verifier {
       acc = blsG1Add(acc, tail);
     }
 
-    done += <%= rem %>;
-<%   } -%>
+    done += <%= tailSize %>;
+<% } -%>
 
     // Cheap guard: reject obvious extras
     nativeThrowIf(ERR_TOO_MANY_PUBLICS, pubInputs.exists(<%= nPublic %>));
 <% } -%>
 
-    // --- cpub = IC0 + acc (IC0 is added exactly once) ---
+    // cpub = IC0 + acc (IC0 is added exactly once)
     let cpub: Slice = haveAcc ? blsG1Add(acc, IC0) : IC0;
 
     // Pairing check

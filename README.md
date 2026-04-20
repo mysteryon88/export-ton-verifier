@@ -5,7 +5,7 @@
 It integrates with the **snarkjs** library and supports circuits built with **Circom**, **Noname**, **Gnark**, and **Arkworks** (via `verification_key.json`).
 The protocol (Groth16 or PLONK) is auto-detected from the `.zkey` file.
 
-Verifier code can be generated for three TON languages: **FunC**, **Tolk**, and **Tact** (selected via the `--func`, `--tolk`, or `--tact` flags). TypeScript wrapper templates are available per protocol (`--groth16` / `--plonk` for `import-wrapper` and `--wrapper-dest`).
+Verifier code can be generated for three TON languages: **FunC**, **Tolk**, and **Tact**. **Tolk is the default** for both verifier generation and Groth16 wrapper selection; use `--func`, `--tolk`, or `--tact` to override it. TypeScript wrapper templates are selected by language and protocol for `import-wrapper` and `--wrapper-dest`.
 
 ## Installation
 
@@ -32,25 +32,39 @@ import {
 ## Usage CLI
 
 ```sh
-# From .zkey, FunC by default:
-npx export-ton-verifier ./circuits/verifier.zkey ./verifier.fc
+# From .zkey, Tolk by default:
+npx export-ton-verifier ./circuits/verifier.zkey ./verifier.tolk
 
 # From verification_key.json (auto-detected by .json):
-npx export-ton-verifier ./circuits/verification_key.json ./verifier.fc
+npx export-ton-verifier ./circuits/verification_key.json ./verifier.tolk
 
 # Force JSON mode (even if extension is not .json):
 npx export-ton-verifier ./vk.txt ./verifier.tolk --tolk --vk
+
+# Generate FunC verifier:
+npx export-ton-verifier ./circuits/verifier.zkey ./verifier.fc --func
 
 # Generate Tact verifier:
 npx export-ton-verifier ./circuits/verifier.zkey ./verifier.tact --tact
 
 # Generate and also drop the TypeScript wrapper:
-npx export-ton-verifier ./circuits/verification_key.json ./verifier.fc --func --wrapper-dest ./wrappers/ --force
+npx export-ton-verifier ./circuits/verification_key.json ./verifier.tolk --wrapper-dest ./wrappers/ --force
 
-# Only copy the TypeScript wrapper (specify protocol):
+# Only copy the TypeScript wrapper (protocol required; Tolk by default for Groth16):
 npx export-ton-verifier import-wrapper ./wrappers/ --groth16 --force
-npx export-ton-verifier import-wrapper ./wrappers/ --plonk --force
+npx export-ton-verifier import-wrapper ./wrappers/ --groth16 --func --force
+npx export-ton-verifier import-wrapper ./wrappers/ --plonk --func --force
 ```
+
+## Tests
+
+```bash
+npm test
+```
+
+- `test/tolk_groth16_template.test.js` checks that the rendered Tolk Groth16 verifier keeps `array<int>` in the getter interface, uses `RemainingBitsAndRefs` plus manual payload parsing for internal messages, removes dict-only checks/errors, and emits the expected batching helpers for both small and multi-batch circuits.
+- `test/template_error_constants.test.js` checks that the rendered Groth16 templates do not keep dead error codes/helpers: Func no longer emits `index_out_of_range`, and Tact only emits public-input errors/helpers when they are actually used.
+- `test/wrapper_templates.test.js` checks that `import-wrapper` picks the Func Groth16 wrapper for `--func`, the Tolk Groth16 wrapper for `--tolk`, defaults to the Tolk Groth16 wrapper when no language flag is given, and that the copied files use the expected public-input encoding (`dict` for Func, `array<int>` tuple/array encoding for Tolk).
 
 ## References
 

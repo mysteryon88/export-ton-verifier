@@ -7,8 +7,7 @@ import {
   ContractProvider,
   Sender,
   SendMode,
-  TupleItem,
-  Dictionary,
+  TupleBuilder,
 } from "@ton/core";
 
 export type VerifierConfig = {};
@@ -24,7 +23,7 @@ export const Opcodes = {
 export class Verifier implements Contract {
   constructor(
     readonly address: Address,
-    readonly init?: { code: Cell; data: Cell }
+    readonly init?: { code: Cell; data: Cell },
   ) {}
 
   static createFromAddress(address: Address) {
@@ -55,7 +54,7 @@ export class Verifier implements Contract {
       pubInputs: bigint[];
       value: bigint;
       queryID?: number;
-    }
+    },
   ) {
     await provider.internal(via, {
       value: opts.value,
@@ -64,15 +63,38 @@ export class Verifier implements Contract {
     });
   }
 
-  dictFromInputList(list: bigint[]): Dictionary<bigint, bigint> {
-    const dict: Dictionary<bigint, bigint> = Dictionary.empty(
-      Dictionary.Keys.BigUint(32),
-      Dictionary.Values.BigInt(256)
-    );
-    for (let i = 0; i < list.length; i++) {
-      dict.set(BigInt(i), list[i]);
+  tupleFromInputList(list: bigint[]) {
+    const tuple = new TupleBuilder();
+    for (const value of list) {
+      tuple.writeNumber(value);
     }
-    return dict;
+    return tuple.build();
+  }
+
+  serializeIntArray(list: bigint[]): Cell {
+    if (list.length > 255) {
+      throw new Error("Tolk array<int> wrapper supports at most 255 items.");
+    }
+
+    // Tolk serializes arrays as uint8 length plus Snake-style continuation cells.
+    let tail: Cell | null = null;
+    for (let i = list.length; i > 0; i -= 3) {
+      const chunk = list.slice(Math.max(0, i - 3), i);
+      const cell = beginCell();
+      for (const value of chunk) {
+        cell.storeInt(value, 257);
+      }
+      if (tail) {
+        cell.storeRef(tail);
+      }
+      tail = cell.endCell();
+    }
+
+    const root = beginCell().storeUint(list.length, 8);
+    if (tail) {
+      root.storeSlice(tail.beginParse());
+    }
+    return root.endCell();
   }
 
   buildVerifyBody(opts: {
@@ -84,15 +106,14 @@ export class Verifier implements Contract {
     const piAcell = beginCell().storeBuffer(opts.pi_a).endCell();
     const piBcell = beginCell().storeBuffer(opts.pi_b).endCell();
     const piCcell = beginCell().storeBuffer(opts.pi_c).endCell();
-
-    const pubDict = this.dictFromInputList(opts.pubInputs);
+    const pubInputs = this.serializeIntArray(opts.pubInputs);
 
     const body = beginCell()
       .storeUint(Opcodes.verify, 32)
       .storeRef(piAcell)
       .storeRef(piBcell)
       .storeRef(piCcell)
-      .storeDict(pubDict)
+      .storeSlice(pubInputs.beginParse())
       .endCell();
 
     return body;
@@ -105,28 +126,15 @@ export class Verifier implements Contract {
       pi_b: Buffer;
       pi_c: Buffer;
       pubInputs: bigint[];
-    }
+    },
   ): Promise<boolean> {
-    const pi_a = {
-      type: "slice",
-      cell: beginCell().storeBuffer(opts.pi_a).endCell(),
-    } as TupleItem;
-    const pi_b = {
-      type: "slice",
-      cell: beginCell().storeBuffer(opts.pi_b).endCell(),
-    } as TupleItem;
-    const pi_c = {
-      type: "slice",
-      cell: beginCell().storeBuffer(opts.pi_c).endCell(),
-    } as TupleItem;
-    const pubInputs = {
-      type: "slice",
-      cell: beginCell()
-        .storeDict(this.dictFromInputList(opts.pubInputs))
-        .endCell(),
-    } as TupleItem;
+    const args = new TupleBuilder();
+    args.writeSlice(beginCell().storeBuffer(opts.pi_a).endCell());
+    args.writeSlice(beginCell().storeBuffer(opts.pi_b).endCell());
+    args.writeSlice(beginCell().storeBuffer(opts.pi_c).endCell());
+    args.writeTuple(this.tupleFromInputList(opts.pubInputs));
 
-    const result = await provider.get("verify", [pi_a, pi_b, pi_c, pubInputs]);
+    const result = await provider.get("verify", args.build());
     return result.stack.readBoolean();
   }
 }

@@ -1,12 +1,63 @@
+<%
+const maxBatch = 7;
+let sizes = [];
+
+if (nPublic <= 0) {
+  sizes = [];
+} else if (nPublic <= maxBatch) {
+  sizes = [nPublic];
+} else {
+  const fullBatches = Math.floor(nPublic / maxBatch);
+  for (let i = 0; i < fullBatches; i++) sizes.push(maxBatch);
+  const rem = nPublic % maxBatch;
+  if (rem > 0) sizes.push(rem);
+}
+
+const uniqSizes = [...new Set(sizes)];
+const icConstants = IC
+  .map((point, i) => `const slice verifier::IC${i} = "${point}"s;`)
+  .join("\n");
+const publicInputLoads = Array.from({ length: nPublic }, (_, i) => {
+  return [
+    `    (slice input${i}, int ok${i}) = pubInputs~udict_delete_get?(verifier::publicInputKeyLen, ${i});`,
+    `    throw_unless(verifier::err::public_not_present, ok${i});`,
+    `    int val${i} = input${i}~load_uint(256);`,
+  ].join("\n");
+}).join("\n");
+
+function renderMultiexpDecl(k) {
+  const args = Array.from(
+    { length: k },
+    (_, i) => `    slice x${i + 1}, int y${i + 1}${i < k - 1 ? "," : ""}`,
+  ).join("\n");
+  return `slice bls_g1_multiexp_${k}(\n${args}\n    , int n\n) asm "BLS_G1_MULTIEXP";`;
+}
+
+function renderBatchStatement(k, startIndex, isFirst) {
+  const args = Array.from({ length: k }, (_, i) => {
+    return `        verifier::IC${startIndex + i + 1}, val${startIndex + i}`;
+  }).join(",\n");
+  const prefix = isFirst ? "    slice cpub = " : "    cpub = bls_g1_add(cpub, ";
+  const suffix = isFirst ? ";" : ");";
+  return `${prefix}bls_g1_multiexp_${k}(\n${args}\n        , ${k}\n    )${suffix}`;
+}
+
+const multiexpDecls = uniqSizes.map((k) => renderMultiexpDecl(k)).join("\n\n");
+
+let nextBatchStart = 0;
+const cpubAssembly = sizes.map((k, i) => {
+  const statement = renderBatchStatement(k, nextBatchStart, i === 0);
+  nextBatchStart += k;
+  return statement;
+}).join("\n");
+%>
 #include "imports/stdlib.fc";
 
 ;; ops
 const op::verify = "op::verify"c;
 
 ;; input constants (IC0 is the base term)
-<% for (let i = 0; i < IC.length; i++) { -%>
-const slice verifier::IC<%= i %> = "<%= IC[i] %>"s;
-<% } -%>
+<%- icConstants %>
 
 ;; vk constants
 const slice verifier::vk_gamma_2 = "<%= vk_gamma_2 %>"s;
@@ -19,9 +70,10 @@ const int verifier::publicInputKeyLen = <%= publicInputKeyLen %>;
 const int verifier::nPublic = <%= nPublic %>;
 
 ;; error codes
+<% if (nPublic > 0) { -%>
 const int verifier::err::public_not_present = 257;
+<% } -%>
 const int verifier::err::too_many_publics = 258;
-const int verifier::err::index_out_of_range = 259;
 const int verifier::err::wrong_proof = 260;
 
 ;; bls intrinsics
@@ -29,31 +81,9 @@ slice bls_g1_add(slice x, slice y) asm "BLS_G1_ADD";
 slice bls_g1_neg(slice x) asm "BLS_G1_NEG";
 int bls_pairing(slice x1, slice y1, slice x2, slice y2, slice x3, slice y3, slice x4, slice y4, int n) asm "BLS_PAIRING";
 
-<%
-const maxBatch = 7;
-let sizes = [];
-if (nPublic <= 0) {
-  sizes = [];
-} else if (nPublic <= maxBatch) {
-  sizes = [nPublic];
-} else {
-  const full = Math.floor(nPublic / maxBatch);
-  for (let i = 0; i < full; i++) sizes.push(maxBatch);
-  const rem = nPublic % maxBatch;
-  if (rem > 0) sizes.push(rem);
-}
-
-const uniqSizes = [...new Set(sizes)];
--%>
-
-<% uniqSizes.forEach((k) => { -%>
-slice bls_g1_multiexp_<%= k %>(
-<% for (let i = 1; i <= k; i++) { -%>
-    slice x<%= i %>, int y<%= i %><%= i<k ? "," : "" %>
+<% if (multiexpDecls) { -%>
+<%- multiexpDecls %>
 <% } -%>
-    , int n
-) asm "BLS_G1_MULTIEXP";
-<% }); -%>
 
 (int) groth16Verify(
     slice piA,
@@ -71,45 +101,13 @@ slice bls_g1_multiexp_<%= k %>(
 <% } else { -%>
 
     ;; extract public inputs by keys 0..nPublic-1
-<% for (let i = 0; i < nPublic; i++) { -%>
-    (slice input<%= i %>, int ok<%= i %>) = pubInputs~udict_delete_get?(verifier::publicInputKeyLen, <%= i %>);
-    throw_unless(verifier::err::public_not_present, ok<%= i %>);
-    int val<%= i %> = input<%= i %>~load_uint(256);
-<% } -%>
+<%- publicInputLoads %>
 
     ;; ensure the dict is now empty (no extra public inputs beyond 0..nPublic-1)
     throw_unless(verifier::err::too_many_publics, null?(pubInputs));
 
     ;; assemble cpub via batched MULTIEXP and summation
-<%
-let cursor = 1; // IC1..ICnPublic are used with val0..valN-1
-let batchIndex = 0;
--%>
-<% if (sizes.length === 1) { 
-   const k = sizes[0]; -%>
-    slice cpub = bls_g1_multiexp_<%= k %>(
-<%   for (let i = 0; i < k; i++) { -%>
-        verifier::IC<%= cursor + i %>, val<%= i %><%= i<k-1 ? "," : "" %>
-<%   } -%>
-        , <%= k %>
-    );
-<% } else { 
-
-    let globalIdx = 0;
-   sizes.forEach((k, bi) => { -%>
-<%     if (bi === 0) { -%>
-    slice cpub = bls_g1_multiexp_<%= k %>(
-<%     } else { -%>
-    cpub = bls_g1_add(cpub, bls_g1_multiexp_<%= k %>(
-<%     } -%>
-<%     for (let j = 0; j < k; j++) { -%>
-        verifier::IC<%= cursor + globalIdx + j %>, val<%= globalIdx + j %><%= j<k-1 ? "," : "" %>
-<%     } -%>
-        , <%= k %>
-    )<%= bi===0 ? ";" : ");" %>
-<%     globalIdx += k; -%>
-<%   }); -%>
-<% } -%>
+<%- cpubAssembly %>
 
     ;; add the free term IC0
     cpub = bls_g1_add(cpub, verifier::IC0);

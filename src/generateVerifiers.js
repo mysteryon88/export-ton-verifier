@@ -53,7 +53,7 @@ export async function generateVerifier(
   inputPath,
   outputPath,
   {
-    lang = "func",
+    lang = "tolk",
     templatesDir = path.join(process.cwd(), "templates"),
     forceJson = false,
   } = {},

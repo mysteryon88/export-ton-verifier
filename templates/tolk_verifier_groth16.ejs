@@ -1,22 +1,92 @@
-import "@stdlib/tvm-dicts"
+<%
+const maxBatch = 7;
+let sizes = [];
 
+if (nPublic > 0) {
+  if (nPublic <= maxBatch) {
+    sizes = [nPublic];
+  } else {
+    const fullBatches = Math.floor(nPublic / maxBatch);
+    for (let i = 0; i < fullBatches; i++) sizes.push(maxBatch);
+    const rem = nPublic % maxBatch;
+    if (rem > 0) sizes.push(rem);
+  }
+}
+
+const uniqSizes = [...new Set(sizes)];
+const tailSizes = uniqSizes.filter((s) => s !== 7).sort((a, b) => a - b);
+const pubInputNames = Array.from({ length: nPublic }, (_, i) => `pubInput${i}`);
+const verifySignatureTail = pubInputNames.length
+  ? `,\n${pubInputNames.map((name) => `  ${name}: int`).join(",\n")}`
+  : "";
+const verifyCallTail = pubInputNames.length
+  ? `,\n${pubInputNames.map((name) => `    ${name}`).join(",\n")}`
+  : "";
+const getterCallTail = pubInputNames.length
+  ? `,\n${pubInputNames.map((_, i) => `    pubInputs.get(${i})`).join(",\n")}`
+  : "";
+const icConstants = IC
+  .map((point, i) => `const IC${i}: slice = "${point}".hexToSlice()`)
+  .join("\n");
+const icSelectorCases = IC
+  .slice(1)
+  .map((_, i) => `  if (idx == ${i + 1}) { return IC${i + 1}; }`)
+  .join("\n");
+const pubInputSelectorTail = pubInputNames.length
+  ? `,\n${pubInputNames.map((name) => `  ${name}: int`).join(",\n")}`
+  : "";
+const pubInputSelectorCases = pubInputNames
+  .map((name, i) => `  if (idx == ${i}) { return ${name}; }`)
+  .join("\n");
+const verifyProofLoads = pubInputNames
+  .map((name) => `  var ${name}: int = loadNextPubInput(mutate payload);`)
+  .join("\n");
+const directBatchArgs = pubInputNames
+  .map((name, i) => `    IC${i + 1}, ${name}`)
+  .join(",\n");
+const joinedPubInputNames = pubInputNames.join(", ");
+
+function renderMultiexpDecl(k) {
+  const args = Array.from(
+    { length: k },
+    (_, i) => `  x${i + 1}: slice, y${i + 1}: int,`,
+  ).join("\n");
+  return `@pure\nfun blsG1Multiexp_${k}(\n${args}\n  n: int\n): slice asm "BLS_G1_MULTIEXP";`;
+}
+
+function renderPubInputAtCall(idxExpr) {
+  return `pubInputAt(${idxExpr}, ${joinedPubInputNames})`;
+}
+
+function renderRuntimeBatchArgs(count) {
+  return Array.from({ length: count }, (_, i) => {
+    const point = `ic(done + ${i + 1})`;
+    const scalar = renderPubInputAtCall(`done + ${i}`);
+    return `      ${point}, ${scalar}`;
+  }).join(",\n");
+}
+
+const multiexpDecls = uniqSizes.map((k) => renderMultiexpDecl(k)).join("\n\n");
+const tailBranches = tailSizes.map((r, i) => {
+  const cond = i === 0 ? "if" : "else if";
+  return `  ${cond} (rem == ${r}) {\n    var tail: slice = blsG1Multiexp_${r}(\n${renderRuntimeBatchArgs(r)}\n      , ${r}\n    );\n\n    if (!haveAcc) {\n      acc = tail;\n      haveAcc = true;\n    } else {\n      acc = blsG1Add(acc, tail);\n    }\n\n    done += ${r};\n  }`;
+}).join("\n");
+%>
 // IC0 is the constant term
-<% for (let i = 0; i < IC.length; i++) { -%>
-const IC<%= i %>: slice = stringHexToSlice("<%= IC[i] %>")
-<% } -%>
+<%- icConstants %>
 
-const VK_GAMMA_2: slice = stringHexToSlice("<%= vk_gamma_2 %>")
-const VK_DELTA_2: slice = stringHexToSlice("<%= vk_delta_2 %>")
-const VK_ALPHA_1: slice = stringHexToSlice("<%= vk_alpha_1 %>")
-const VK_BETA_2:  slice = stringHexToSlice("<%= vk_beta_2 %>")
+const VK_GAMMA_2: slice = "<%= vk_gamma_2 %>".hexToSlice()
+const VK_DELTA_2: slice = "<%= vk_delta_2 %>".hexToSlice()
+const VK_ALPHA_1: slice = "<%= vk_alpha_1 %>".hexToSlice()
+const VK_BETA_2:  slice = "<%= vk_beta_2 %>".hexToSlice()
 
-const PUBLIC_KEY_LEN: int = <%= publicInputKeyLen %>
 const N_PUBLIC: int = <%= nPublic %>
 
-const ERR_PUBLIC_NOT_PRESENT: int = 257
-const ERR_TOO_MANY_PUBLICS:   int = 258
+const ERR_INVALID_INPUTS: int = 258
+<% if (nPublic > 7) { -%>
 const ERR_INDEX_OUT_OF_RANGE: int = 259
-const ERR_WRONG_PROOF:        int = 260
+<% } -%>
+const ERR_WRONG_PROOF: int = 260
 
 @pure fun blsG1Add(x: slice, y: slice): slice asm "BLS_G1_ADD";
 @pure fun blsG1Neg(x: slice): slice       asm "BLS_G1_NEG";
@@ -28,112 +98,67 @@ const ERR_WRONG_PROOF:        int = 260
   n: int
 ): int asm "BLS_PAIRING";
 
-<%
-/* batching plan: max 7 pairs per MULTIEXP */
-const maxBatch = 7;
-let sizes = [];
-if (nPublic <= 0) {
-  sizes = [];
-} else if (nPublic <= maxBatch) {
-  sizes = [nPublic];
-} else {
-  const full = Math.floor(nPublic / maxBatch);
-  for (let i = 0; i < full; i++) sizes.push(maxBatch);
-  const rem = nPublic % maxBatch;
-  if (rem > 0) sizes.push(rem);
-}
-const uniqSizes = [...new Set(sizes)];
-const tailSizes = uniqSizes.filter(s => s !== 7).sort((a,b)=>a-b);
--%>
-
-<% uniqSizes.forEach((k) => { -%>
-@pure
-fun blsG1Multiexp_<%= k %>(
-<% for (let i = 1; i <= k; i++) { -%>
-  x<%= i %>: slice, y<%= i %>: int<%= i<k ? "," : "" %>
+<% if (multiexpDecls) { -%>
+<%- multiexpDecls %>
 <% } -%>
-  , n: int
-): slice asm "BLS_G1_MULTIEXP";
-<% }); -%>
 
-<% if (IC.length > 1) { -%>
+<% if (nPublic > 7) { -%>
 // IC selector for runtime index: 1 -> IC1, 2 -> IC2, ...
 fun ic(idx: int): slice {
-<% for (let i = 1; i < IC.length; i++) { -%>
-  if (idx == <%= i %>) { return IC<%= i %>; }
-<% } -%>
+<%- icSelectorCases %>
   throw(ERR_INDEX_OUT_OF_RANGE);
+}
+
+// Public input selector for runtime-indexed batching.
+fun pubInputAt(
+  idx: int<%- pubInputSelectorTail %>
+): int {
+<%- pubInputSelectorCases %>
+  throw(ERR_INDEX_OUT_OF_RANGE);
+}
+<% } -%>
+
+<% if (nPublic > 0) { -%>
+// Internal messages carry public inputs as a custom payload:
+// uint8 length, then int257 values chained through refs as needed.
+fun loadNextPubInput(mutate payload: slice): int {
+  if (payload.remainingBitsCount() < 257) {
+    if (payload.remainingBitsCount() != 0 || payload.remainingRefsCount() == 0) {
+      throw(ERR_INVALID_INPUTS);
+    }
+    payload = payload.loadRef().beginParse();
+  }
+  return payload.loadInt(257);
 }
 <% } -%>
 
 fun groth16Verify(
   piA: slice,
   piB: slice,
-  piC: slice,
-  pubInputs: dict
+  piC: slice<%- verifySignatureTail %>
 ): bool {
-
-  // We compute: cpub = IC0 + Σ (public[i] * IC(i+1))
+  // Compute: cpub = IC0 + sum(pubInputs[i] * IC(i+1))
   var haveAcc: bool = false;
   var acc: slice = IC0; // placeholder until haveAcc == true
 
 <% if (nPublic === 0) { -%>
-  // No public inputs allowed. Cheap sanity: reject if key 0 exists.
-  var (x0: slice?, ok0: bool) = pubInputs.uDictGet(PUBLIC_KEY_LEN, 0);
-  if (ok0) { throw(ERR_TOO_MANY_PUBLICS); }
-
+  // No public inputs, nothing to accumulate.
 <% } else if (nPublic <= 7) { -%>
-  // Single batch (no loops; non-destructive dict access)
-<% for (let i = 0; i < nPublic; i++) { -%>
-  var (in<%= i %>: slice?, ok<%= i %>: bool) = pubInputs.uDictGet(PUBLIC_KEY_LEN, <%= i %>);
-  if (!ok<%= i %>) { throw(ERR_PUBLIC_NOT_PRESENT); }
-  var v<%= i %>: int = in<%= i %>!.loadUint(256);
-<% } -%>
-
   acc = blsG1Multiexp_<%= nPublic %>(
-<% for (let i = 0; i < nPublic; i++) { -%>
-    IC<%= i+1 %>, v<%= i %><%= i<nPublic-1 ? "," : "" %>
-<% } -%>
+<%- directBatchArgs %>
     , <%= nPublic %>
   );
   haveAcc = true;
-
-  // Cheap "no extra keys" guard
-  var (extra: slice?, extraOk: bool) = pubInputs.uDictGet(PUBLIC_KEY_LEN, N_PUBLIC);
-  if (extraOk) { throw(ERR_TOO_MANY_PUBLICS); }
-
 <% } else { -%>
-  // Multiple 7-sized batches + tail (non-destructive dict access)
+  // Multiple 7-sized batches plus an optional tail.
   var done: int = 0;
   var full: int = N_PUBLIC / 7;
   var rem:  int = N_PUBLIC % 7;
 
   while (full > 0) {
-    var in0: slice?; var ok0: bool; var v0: int;
-    var in1: slice?; var ok1: bool; var v1: int;
-    var in2: slice?; var ok2: bool; var v2: int;
-    var in3: slice?; var ok3: bool; var v3: int;
-    var in4: slice?; var ok4: bool; var v4: int;
-    var in5: slice?; var ok5: bool; var v5: int;
-    var in6: slice?; var ok6: bool; var v6: int;
-
-    (in0, ok0) = pubInputs.uDictGet(PUBLIC_KEY_LEN, done + 0); if (!ok0) { throw(ERR_PUBLIC_NOT_PRESENT); } v0 = in0!.loadUint(256);
-    (in1, ok1) = pubInputs.uDictGet(PUBLIC_KEY_LEN, done + 1); if (!ok1) { throw(ERR_PUBLIC_NOT_PRESENT); } v1 = in1!.loadUint(256);
-    (in2, ok2) = pubInputs.uDictGet(PUBLIC_KEY_LEN, done + 2); if (!ok2) { throw(ERR_PUBLIC_NOT_PRESENT); } v2 = in2!.loadUint(256);
-    (in3, ok3) = pubInputs.uDictGet(PUBLIC_KEY_LEN, done + 3); if (!ok3) { throw(ERR_PUBLIC_NOT_PRESENT); } v3 = in3!.loadUint(256);
-    (in4, ok4) = pubInputs.uDictGet(PUBLIC_KEY_LEN, done + 4); if (!ok4) { throw(ERR_PUBLIC_NOT_PRESENT); } v4 = in4!.loadUint(256);
-    (in5, ok5) = pubInputs.uDictGet(PUBLIC_KEY_LEN, done + 5); if (!ok5) { throw(ERR_PUBLIC_NOT_PRESENT); } v5 = in5!.loadUint(256);
-    (in6, ok6) = pubInputs.uDictGet(PUBLIC_KEY_LEN, done + 6); if (!ok6) { throw(ERR_PUBLIC_NOT_PRESENT); } v6 = in6!.loadUint(256);
-
     var tmp: slice = blsG1Multiexp_7(
-      ic(done + 1), v0,
-      ic(done + 2), v1,
-      ic(done + 3), v2,
-      ic(done + 4), v3,
-      ic(done + 5), v4,
-      ic(done + 6), v5,
-      ic(done + 7), v6,
-      7
+<%- renderRuntimeBatchArgs(7) %>
+      , 7
     );
 
     if (!haveAcc) {
@@ -147,42 +172,12 @@ fun groth16Verify(
     full -= 1;
   }
 
-  <% if (tailSizes.length) { -%>
-  <% tailSizes.forEach((r, i) => { -%>
-  <%= i === 0 ? 'if' : 'else if' %> (rem == <%= r %>) {
-    <% for (let j = 0; j < r; j++) { -%>
-    var inT<%= j %>: slice?; var okT<%= j %>: bool; var vT<%= j %>: int;
-    (inT<%= j %>, okT<%= j %>) = pubInputs.uDictGet(PUBLIC_KEY_LEN, done + <%= j %>);
-    if (!okT<%= j %>) { throw(ERR_PUBLIC_NOT_PRESENT); }
-    vT<%= j %> = inT<%= j %>!.loadUint(256);
-    <% } -%>
-
-    var tail: slice = blsG1Multiexp_<%= r %>(
-      <% for (let j = 0; j < r; j++) { -%>
-      ic(done + <%= j+1 %>), vT<%= j %><%= j < r-1 ? "," : "" %>
-      <% } -%>
-      , <%= r %>
-    );
-
-    if (!haveAcc) {
-      acc = tail;
-      haveAcc = true;
-    } else {
-      acc = blsG1Add(acc, tail);
-    }
-
-    done += <%= r %>;
-  }
-  <% }); -%>
-  <% } -%>
-
-  // Cheap "no extra keys" guard
-  var (extra: slice?, extraOk: bool) = pubInputs.uDictGet(PUBLIC_KEY_LEN, N_PUBLIC);
-  if (extraOk) { throw(ERR_TOO_MANY_PUBLICS); }
-
+<% if (tailBranches) { -%>
+<%- tailBranches %>
+<% } -%>
 <% } -%>
 
-  // Final cpub = IC0 + acc (IC0 added exactly once)
+  // Final cpub = IC0 + acc (IC0 is always added exactly once)
   var cpub: slice;
   if (!haveAcc) {
     cpub = IC0;
@@ -190,9 +185,9 @@ fun groth16Verify(
     cpub = blsG1Add(acc, IC0);
   }
 
-  // pairing check
+  // Pairing check: e(cpub, gamma) * e(-piA, piB) * e(piC, delta) * e(alpha, beta) == 1
   var piANeg: slice = blsG1Neg(piA);
-  var a: int = blsPairing(
+  var ok: int = blsPairing(
     cpub,       VK_GAMMA_2,
     piANeg,     piB,
     piC,        VK_DELTA_2,
@@ -200,21 +195,35 @@ fun groth16Verify(
     4
   );
 
-  return a != 0;
+  return ok != 0;
 }
 
 struct (0x3b3cca17) Verify {
   piA: cell
   piB: cell
   piC: cell
-  pubInputs: dict
+  pubInputs: RemainingBitsAndRefs
 }
 
 fun verifyProof(msg: Verify): bool {
   var piA: slice = msg.piA.beginParse();
   var piB: slice = msg.piB.beginParse();
   var piC: slice = msg.piC.beginParse();
-  return groth16Verify(piA, piB, piC, msg.pubInputs);
+  var payload: slice = msg.pubInputs;
+
+  if (payload.loadUint(8) != N_PUBLIC) { throw(ERR_INVALID_INPUTS); }
+<% if (verifyProofLoads) { -%>
+<%- verifyProofLoads %>
+<% } -%>
+  if (payload.remainingBitsCount() != 0 || payload.remainingRefsCount() != 0) {
+    throw(ERR_INVALID_INPUTS);
+  }
+
+  return groth16Verify(
+    piA,
+    piB,
+    piC<%- verifyCallTail %>
+  );
 }
 
 fun onInternalMessage(inMsg: InMessage) {
@@ -228,6 +237,12 @@ fun onInternalMessage(inMsg: InMessage) {
   }
 }
 
-get fun verify(piA: slice, piB: slice, piC: slice, pubInputs: slice): bool {
-  return groth16Verify(piA, piB, piC, pubInputs.loadDict());
+get fun verify(piA: slice, piB: slice, piC: slice, pubInputs: array<int>): bool {
+  if (pubInputs.size() != N_PUBLIC) { throw(ERR_INVALID_INPUTS); }
+
+  return groth16Verify(
+    piA,
+    piB,
+    piC<%- getterCallTail %>
+  );
 }

@@ -1,3 +1,39 @@
+<%
+const domainSize = 2 ** power;
+const nLagrange = Math.max(nPublic, 1);
+const xinSquares = Array.from(
+  { length: power },
+  () => "    xin = mulmod(xin, xin, bls::R());",
+).join("\n");
+const inverseSeedLines = Array.from({ length: nLagrange }, (_, index) => {
+  const i = index + 1;
+  const lines = [
+    `    invs~verifier::set_arr(${i}, mulmod(verifier::domainSize, (xi - w) % bls::R(), bls::R()));`,
+  ];
+  if (i < nLagrange) {
+    lines.push("    w = mulmod(w, verifier::w1, bls::R());");
+  }
+  return lines.join("\n");
+}).join("\n");
+const lagrangeEvalLines = Array.from({ length: nLagrange }, (_, index) => {
+  const i = index + 1;
+  const lines = [
+    i === 1
+      ? "    int eval_l1 = mulmod(invd.verifier::read_arr(1), zh, bls::R());"
+      : `    restEvals~verifier::set_arr(${i}, mulmod(w, mulmod(invd.verifier::read_arr(${i}), zh, bls::R()), bls::R()));`,
+  ];
+  if (i < nLagrange) {
+    lines.push("    w = mulmod(w, verifier::w1, bls::R());");
+  }
+  return lines.join("\n");
+}).join("\n");
+const publicInputEvalLines = Array.from({ length: nPublic }, (_, i) => {
+  if (i === 0) {
+    return "    pl = (pl - mulmod(eval_l1, public.verifier::read_arr(0), bls::R())) % bls::R();";
+  }
+  return `    pl = (pl - mulmod(restEvals.verifier::read_arr(${i + 1}), public.verifier::read_arr(${i}), bls::R())) % bls::R();`;
+}).join("\n");
+%>
 #include "imports/stdlib.fc";
 
 ;; ============================================
@@ -32,8 +68,8 @@ const int verifier::k2 = <%= k2 %>;
 const int verifier::w1 = <%= w %>;
 
 const int verifier::nPublic = <%= nPublic %>;
-const int verifier::domainSize = <%= 2**power %>; ;; 2**power
-const int verifier::nLagrange = <%= Math.max(nPublic, 1) %>; ;; max(1, npub)
+const int verifier::domainSize = <%= domainSize %>; ;; 2**power
+const int verifier::nLagrange = <%= nLagrange %>; ;; max(1, npub)
 
 const int verifier::publicInputKeyLen = 32;
 
@@ -225,9 +261,9 @@ int verify(
 
     int xin = xi;
 
-    <% for (let i=0; i<power;i++) { %>
-    xin = mulmod(xin, xin, bls::R());
-    <% } %>
+<% if (xinSquares) { -%>
+<%- xinSquares %>
+<% } -%>
 
     int zh = (xin - 1) % bls::R();
     cell invs = null();
@@ -263,12 +299,7 @@ int verify(
 
     int w = 1;
 
-    <% for (let i=1; i<=Math.max(nPublic, 1); i++) { %>
-    invs~verifier::set_arr(<%= i %>, mulmod(verifier::domainSize, (xi - w) % bls::R(), bls::R()));
-    <% if (i<Math.max(nPublic, 1)) { %>
-    w = mulmod(w, verifier::w1, bls::R());
-    <% } %>
-    <% } %>
+<%- inverseSeedLines %>
 
     cell invd = invs.verifier::inverse_array(verifier::nLagrange + 1); ;; + 1 for zhinv
 
@@ -276,29 +307,16 @@ int verify(
 
     w = 1;
 
-    <% for (let i=1; i<=Math.max(nPublic, 1); i++) { %>
-    <% if (i==1) { %>
-    int eval_l1 = mulmod(invd.verifier::read_arr(1), zh, bls::R());
-    <% } else { %>
-    restEvals~verifier::set_arr(<%= i %>, mulmod(w, mulmod(invd.verifier::read_arr(<%= i %>), zh, bls::R()), bls::R()));
-    <% } %>
-    <% if (i<Math.max(nPublic, 1)) { %>
-    w = mulmod(w, verifier::w1, bls::R());
-    <% } %>
-    <% } %>
+<%- lagrangeEvalLines %>
 
     ;; ============================================
     ;; PI (Public Input polynomial evaluation)
     ;; ============================================
     int pl = 0;
 
-    <% for (let i=0; i<nPublic; i++) { %> 
-    <% if (i==0) { %>
-    pl = (pl - mulmod(eval_l1, public.verifier::read_arr(0), bls::R())) % bls::R();
-    <% } else { %>
-    pl = (pl - mulmod(restEvals.verifier::read_arr(<%= i+1 %>), public.verifier::read_arr(<%= i %>), bls::R())) % bls::R();
-    <% } %>
-    <% } %>
+<% if (publicInputEvalLines) { -%>
+<%- publicInputEvalLines %>
+<% } -%>
 
     ;; ============================================
     ;; Compute linearization polynomial commitment

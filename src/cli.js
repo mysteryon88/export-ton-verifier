@@ -12,13 +12,13 @@ function printHelp() {
   console.log(`
 Usage:
   export-ton-verifier <zkeyPath> <outputPath> [--func | --tolk | --tact] [--wrapper-dest <destPath>] [--groth16 | --plonk] [--vk] [--force]
-  export-ton-verifier import-wrapper <destPath> [--groth16 | --plonk] [--force]
+  export-ton-verifier import-wrapper <destPath> [--func | --tolk] [--groth16 | --plonk] [--force]
 
 Description:
   1) Generates a TON verifier smart contract from a Circom .zkey file (or verification_key.json with --vk).
      Protocol (Groth16/PLONK) is auto-detected from the .zkey.
   2) (Optional) Can also copy a TypeScript wrapper template to your project.
-     Wrapper selection supports protocol-specific files.
+     Wrapper selection supports language- and protocol-specific files.
 
 Notes:
   • With --vk, input is treated as verification_key.json (Groth16 only).
@@ -29,39 +29,42 @@ Arguments:
   outputPath      Path to save the generated verifier file
 
 Subcommands:
-  import-wrapper  Copies a protocol-specific wrapper to <destPath> (file or directory).
+  import-wrapper  Copies a language-specific wrapper to <destPath> (file or directory).
                   If <destPath> is a directory, the file will be saved as <destPath>/Verifier.ts.
                   Requires one of --groth16 or --plonk.
 
 Options:
   -h, --help                Show this help message and exit
-  --func                    Use FunC language template for the verifier [default]
-  --tolk                    Use Tolk language template for the verifier
+  --func                    Use FunC language template for the verifier
+  --tolk                    Use Tolk language template for the verifier [default]
   --tact                    Use Tact language template for the verifier
-  --wrapper-dest <destPath> After generation, copy a protocol-specific TypeScript wrapper to <destPath>
+  --wrapper-dest <destPath> After generation, copy a language-specific TypeScript wrapper to <destPath>
   --groth16                 Protocol hint for wrapper selection (wrapper only; verifier protocol is auto-detected)
   --plonk                   Protocol hint for wrapper selection (wrapper only; verifier protocol is auto-detected)
   --vk                      Force treat <inputPath> as verification_key.json (Groth16 only)
   --force                   Overwrite existing file when used with 'import-wrapper' or '--wrapper-dest'
 
 Examples:
-  # Generate FunC verifier from .zkey (default language)
-  npx export-ton-verifier ./circuits/verifier.zkey ./verifier.fc
+  # Generate Tolk verifier from .zkey (default language)
+  npx export-ton-verifier ./circuits/verifier.zkey ./verifier.tolk
 
   # Generate from verification_key.json
-  npx export-ton-verifier ./circuits/verification_key.json ./verifier.fc --vk
+  npx export-ton-verifier ./circuits/verification_key.json ./verifier.tolk --vk
 
-  # Generate Tolk verifier
-  npx export-ton-verifier ./circuits/verifier.zkey ./verifier.tolk --tolk
+  # Generate FunC verifier
+  npx export-ton-verifier ./circuits/verifier.zkey ./verifier.fc --func
 
   # Generate Tact verifier
   npx export-ton-verifier ./circuits/verifier.zkey ./verifier.tact --tact --wrapper-dest ./wrappers/
 
   # Generate and also drop a wrapper (auto-detect protocol from .zkey)
-  npx export-ton-verifier ./circuits/verifier.zkey ./verifier.fc --wrapper-dest ./wrappers/ --force
+  npx export-ton-verifier ./circuits/verifier.zkey ./verifier.tolk --wrapper-dest ./wrappers/ --force
+
+  # Copy the Tolk Groth16 wrapper (default wrapper language)
+  npx export-ton-verifier import-wrapper ./wrappers/ --groth16 --force
 
   # Only copy the TypeScript wrapper (protocol required here)
-  npx export-ton-verifier import-wrapper ./wrappers/ --plonk --force
+  npx export-ton-verifier import-wrapper ./wrappers/ --plonk --func --force
 `);
 }
 
@@ -110,7 +113,7 @@ function parseLangFlag(args) {
     console.error("❌ Use only one of --func, --tolk, --tact.");
     process.exit(1);
   }
-  if (chosen.length === 0) return "func";
+  if (chosen.length === 0) return "tolk";
   return chosen[0].slice(2);
 }
 
@@ -142,16 +145,34 @@ function getFlagValue(args, flag) {
   return val;
 }
 
-function wrapperFileForProtocol(protocol) {
+function wrapperTemplateCandidates(lang, protocol) {
   switch (protocol) {
     case "groth16":
-      return "Verifier_groth16.ts";
     case "plonk":
-      return "Verifier_plonk.ts";
+      return [`Verifier_${lang}_${protocol}.ts`, `Verifier_${protocol}.ts`];
     default:
       console.error(`❌ Unknown protocol for wrapper: ${protocol}`);
       process.exit(1);
   }
+}
+
+function resolveWrapperTemplate(templatesDir, lang, protocol) {
+  if (lang === "tact") {
+    console.error("❌ TypeScript wrappers are not available for Tact.");
+    process.exit(1);
+  }
+
+  for (const file of wrapperTemplateCandidates(lang, protocol)) {
+    const fullPath = path.join(templatesDir, file);
+    if (fileExists(fullPath)) {
+      return fullPath;
+    }
+  }
+
+  console.error(
+    `❌ Wrapper template not found for language '${lang}' and protocol '${protocol}'.`,
+  );
+  process.exit(1);
 }
 
 async function main() {
@@ -172,14 +193,13 @@ async function main() {
     }
 
     const protocol = parseProtocolFlag(args, { required: true });
+    const lang = parseLangFlag(args);
     const force = args.includes("--force");
-    const wrapperFile = wrapperFileForProtocol(protocol);
-    const wrapperSrc = path.join(__dirname, "../templates", wrapperFile);
-
-    if (!fileExists(wrapperSrc)) {
-      console.error(`❌ Wrapper template not found: ${wrapperSrc}`);
-      process.exit(1);
-    }
+    const wrapperSrc = resolveWrapperTemplate(
+      path.join(__dirname, "../templates"),
+      lang,
+      protocol,
+    );
 
     try {
       await copyWrapper(wrapperSrc, destPath, { force });
@@ -226,13 +246,7 @@ async function main() {
       } else {
         const protocol =
           parseProtocolFlag(args, { required: false }) || detectedProtocol;
-        const wrapperFile = wrapperFileForProtocol(protocol);
-        const wrapperSrc = path.join(templatesDir, wrapperFile);
-
-        if (!fileExists(wrapperSrc)) {
-          console.error(`❌ Wrapper template not found: ${wrapperSrc}`);
-          process.exit(1);
-        }
+        const wrapperSrc = resolveWrapperTemplate(templatesDir, lang, protocol);
         await copyWrapper(wrapperSrc, wrapperDest, { force });
       }
     }
