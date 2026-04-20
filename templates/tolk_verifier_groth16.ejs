@@ -15,36 +15,14 @@ if (nPublic > 0) {
 
 const uniqSizes = [...new Set(sizes)];
 const tailSizes = uniqSizes.filter((s) => s !== 7).sort((a, b) => a - b);
-const pubInputNames = Array.from({ length: nPublic }, (_, i) => `pubInput${i}`);
-const verifySignatureTail = pubInputNames.length
-  ? `,\n${pubInputNames.map((name) => `  ${name}: int`).join(",\n")}`
-  : "";
-const verifyCallTail = pubInputNames.length
-  ? `,\n${pubInputNames.map((name) => `    ${name}`).join(",\n")}`
-  : "";
-const getterCallTail = pubInputNames.length
-  ? `,\n${pubInputNames.map((_, i) => `    pubInputs.get(${i})`).join(",\n")}`
-  : "";
 const icConstants = IC
+  .slice(0, nPublic > maxBatch ? 1 : undefined)
   .map((point, i) => `const IC${i}: slice = "${point}".hexToSlice()`)
   .join("\n");
 const icSelectorCases = IC
   .slice(1)
-  .map((_, i) => `  if (idx == ${i + 1}) { return IC${i + 1}; }`)
+  .map((point, i) => `  if (idx == ${i + 1}) { return "${point}".hexToSlice(); }`)
   .join("\n");
-const pubInputSelectorTail = pubInputNames.length
-  ? `,\n${pubInputNames.map((name) => `  ${name}: int`).join(",\n")}`
-  : "";
-const pubInputSelectorCases = pubInputNames
-  .map((name, i) => `  if (idx == ${i}) { return ${name}; }`)
-  .join("\n");
-const verifyProofLoads = pubInputNames
-  .map((name) => `  var ${name}: int = loadNextPubInput(mutate payload);`)
-  .join("\n");
-const directBatchArgs = pubInputNames
-  .map((name, i) => `    IC${i + 1}, ${name}`)
-  .join(",\n");
-const joinedPubInputNames = pubInputNames.join(", ");
 
 function renderMultiexpDecl(k) {
   const args = Array.from(
@@ -54,23 +32,187 @@ function renderMultiexpDecl(k) {
   return `@pure\nfun blsG1Multiexp_${k}(\n${args}\n  n: int\n): slice asm "BLS_G1_MULTIEXP";`;
 }
 
-function renderPubInputAtCall(idxExpr) {
-  return `pubInputAt(${idxExpr}, ${joinedPubInputNames})`;
+function renderPayloadScalarLoads(count, indent, declare) {
+  return Array.from(
+    { length: count },
+    (_, i) => {
+      const lhs = declare ? `var y${i + 1}: int` : `y${i + 1}`;
+      return `${indent}${lhs} = loadNextPubInput(mutate payload);`;
+    },
+  ).join("\n");
 }
 
-function renderRuntimeBatchArgs(count) {
+function addExpr(base, offset) {
+  return offset === 0 ? base : `${base} + ${offset}`;
+}
+
+function renderDirectPayloadBatchArgs(count, indent) {
+  return Array.from(
+    { length: count },
+    (_, i) => `${indent}IC${i + 1}, y${i + 1}`,
+  ).join(",\n");
+}
+
+function renderDirectArrayBatchArgs(count, indent) {
   return Array.from({ length: count }, (_, i) => {
-    const point = `ic(done + ${i + 1})`;
-    const scalar = renderPubInputAtCall(`done + ${i}`);
-    return `      ${point}, ${scalar}`;
+    return `${indent}IC${i + 1}, pubInputs.get(${i})`;
   }).join(",\n");
 }
 
+function renderRuntimePayloadBatchArgs(count, indent) {
+  return Array.from({ length: count }, (_, i) => {
+    return `${indent}ic(done + ${i + 1}), y${i + 1}`;
+  }).join(",\n");
+}
+
+function renderRuntimeArrayBatchArgs(count, indent) {
+  return Array.from({ length: count }, (_, i) => {
+    return `${indent}ic(done + ${i + 1}), pubInputs.get(${addExpr("done", i)})`;
+  }).join(",\n");
+}
+
+function renderPayloadAccumulation() {
+  if (nPublic === 0) {
+    return "  // No public inputs, nothing to accumulate.";
+  }
+
+  if (nPublic <= maxBatch) {
+    const lines = [];
+    lines.push(renderPayloadScalarLoads(nPublic, "  ", true));
+    lines.push(`  acc = blsG1Multiexp_${nPublic}(`);
+    lines.push(renderDirectPayloadBatchArgs(nPublic, "    "));
+    lines.push(`    , ${nPublic}`);
+    lines.push("  );");
+    lines.push("  haveAcc = true;");
+    return lines.join("\n");
+  }
+
+  const lines = [
+    "  // Multiple 7-sized batches plus an optional tail.",
+    "  var done: int = 0;",
+    "  var full: int = N_PUBLIC / 7;",
+    "  var rem:  int = N_PUBLIC % 7;",
+    "",
+    "  while (full > 0) {",
+    renderPayloadScalarLoads(7, "    ", true),
+    "    var tmp: slice = blsG1Multiexp_7(",
+    renderRuntimePayloadBatchArgs(7, "      "),
+    "      , 7",
+    "    );",
+    "",
+    "    if (!haveAcc) {",
+    "      acc = tmp;",
+    "      haveAcc = true;",
+    "    } else {",
+    "      acc = blsG1Add(acc, tmp);",
+    "    }",
+    "",
+    "    done += 7;",
+    "    full -= 1;",
+    "  }",
+  ];
+
+  const tailBranches = tailSizes.map((r, i) => {
+    const cond = i === 0 ? "if" : "else if";
+    return [
+      `  ${cond} (rem == ${r}) {`,
+      renderPayloadScalarLoads(r, "    ", true),
+      `    var tail: slice = blsG1Multiexp_${r}(`,
+      renderRuntimePayloadBatchArgs(r, "      "),
+      `      , ${r}`,
+      "    );",
+      "",
+      "    if (!haveAcc) {",
+      "      acc = tail;",
+      "      haveAcc = true;",
+      "    } else {",
+      "      acc = blsG1Add(acc, tail);",
+      "    }",
+      "",
+      `    done += ${r};`,
+      "  }",
+    ].join("\n");
+  }).join("\n");
+
+  if (tailBranches) {
+    lines.push("");
+    lines.push(tailBranches);
+  }
+
+  return lines.join("\n");
+}
+
+function renderArrayAccumulation() {
+  if (nPublic === 0) {
+    return "  // No public inputs, nothing to accumulate.";
+  }
+
+  if (nPublic <= maxBatch) {
+    const lines = [];
+    lines.push(`  acc = blsG1Multiexp_${nPublic}(`);
+    lines.push(renderDirectArrayBatchArgs(nPublic, "    "));
+    lines.push(`    , ${nPublic}`);
+    lines.push("  );");
+    lines.push("  haveAcc = true;");
+    return lines.join("\n");
+  }
+
+  const lines = [
+    "  // Multiple 7-sized batches plus an optional tail.",
+    "  var done: int = 0;",
+    "  var full: int = N_PUBLIC / 7;",
+    "  var rem:  int = N_PUBLIC % 7;",
+    "",
+    "  while (full > 0) {",
+    "    var tmp: slice = blsG1Multiexp_7(",
+    renderRuntimeArrayBatchArgs(7, "      "),
+    "      , 7",
+    "    );",
+    "",
+    "    if (!haveAcc) {",
+    "      acc = tmp;",
+    "      haveAcc = true;",
+    "    } else {",
+    "      acc = blsG1Add(acc, tmp);",
+    "    }",
+    "",
+    "    done += 7;",
+    "    full -= 1;",
+    "  }",
+  ];
+
+  const tailBranches = tailSizes.map((r, i) => {
+    const cond = i === 0 ? "if" : "else if";
+    return [
+      `  ${cond} (rem == ${r}) {`,
+      `    var tail: slice = blsG1Multiexp_${r}(`,
+      renderRuntimeArrayBatchArgs(r, "      "),
+      `      , ${r}`,
+      "    );",
+      "",
+      "    if (!haveAcc) {",
+      "      acc = tail;",
+      "      haveAcc = true;",
+      "    } else {",
+      "      acc = blsG1Add(acc, tail);",
+      "    }",
+      "",
+      `    done += ${r};`,
+      "  }",
+    ].join("\n");
+  }).join("\n");
+
+  if (tailBranches) {
+    lines.push("");
+    lines.push(tailBranches);
+  }
+
+  return lines.join("\n");
+}
+
 const multiexpDecls = uniqSizes.map((k) => renderMultiexpDecl(k)).join("\n\n");
-const tailBranches = tailSizes.map((r, i) => {
-  const cond = i === 0 ? "if" : "else if";
-  return `  ${cond} (rem == ${r}) {\n    var tail: slice = blsG1Multiexp_${r}(\n${renderRuntimeBatchArgs(r)}\n      , ${r}\n    );\n\n    if (!haveAcc) {\n      acc = tail;\n      haveAcc = true;\n    } else {\n      acc = blsG1Add(acc, tail);\n    }\n\n    done += ${r};\n  }`;
-}).join("\n");
+const payloadAccumulation = renderPayloadAccumulation();
+const arrayAccumulation = renderArrayAccumulation();
 %>
 // IC0 is the constant term
 <%- icConstants %>
@@ -103,17 +245,9 @@ const ERR_WRONG_PROOF: int = 260
 <% } -%>
 
 <% if (nPublic > 7) { -%>
-// IC selector for runtime index: 1 -> IC1, 2 -> IC2, ...
+// IC selector for runtime batching. The points are inlined to avoid emitting IC1..ICN constants.
 fun ic(idx: int): slice {
 <%- icSelectorCases %>
-  throw(ERR_INDEX_OUT_OF_RANGE);
-}
-
-// Public input selector for runtime-indexed batching.
-fun pubInputAt(
-  idx: int<%- pubInputSelectorTail %>
-): int {
-<%- pubInputSelectorCases %>
   throw(ERR_INDEX_OUT_OF_RANGE);
 }
 <% } -%>
@@ -132,51 +266,13 @@ fun loadNextPubInput(mutate payload: slice): int {
 }
 <% } -%>
 
-fun groth16Verify(
+fun finishGroth16(
   piA: slice,
   piB: slice,
-  piC: slice<%- verifySignatureTail %>
+  piC: slice,
+  acc: slice,
+  haveAcc: bool
 ): bool {
-  // Compute: cpub = IC0 + sum(pubInputs[i] * IC(i+1))
-  var haveAcc: bool = false;
-  var acc: slice = IC0; // placeholder until haveAcc == true
-
-<% if (nPublic === 0) { -%>
-  // No public inputs, nothing to accumulate.
-<% } else if (nPublic <= 7) { -%>
-  acc = blsG1Multiexp_<%= nPublic %>(
-<%- directBatchArgs %>
-    , <%= nPublic %>
-  );
-  haveAcc = true;
-<% } else { -%>
-  // Multiple 7-sized batches plus an optional tail.
-  var done: int = 0;
-  var full: int = N_PUBLIC / 7;
-  var rem:  int = N_PUBLIC % 7;
-
-  while (full > 0) {
-    var tmp: slice = blsG1Multiexp_7(
-<%- renderRuntimeBatchArgs(7) %>
-      , 7
-    );
-
-    if (!haveAcc) {
-      acc = tmp;
-      haveAcc = true;
-    } else {
-      acc = blsG1Add(acc, tmp);
-    }
-
-    done += 7;
-    full -= 1;
-  }
-
-<% if (tailBranches) { -%>
-<%- tailBranches %>
-<% } -%>
-<% } -%>
-
   // Final cpub = IC0 + acc (IC0 is always added exactly once)
   var cpub: slice;
   if (!haveAcc) {
@@ -198,6 +294,42 @@ fun groth16Verify(
   return ok != 0;
 }
 
+fun groth16VerifyPayload(
+  piA: slice,
+  piB: slice,
+  piC: slice,
+  mutate payload: slice
+): bool {
+  // Compute: cpub = IC0 + sum(pubInputs[i] * IC(i+1))
+  var haveAcc: bool = false;
+  var acc: slice = IC0; // placeholder until haveAcc == true
+
+<%- payloadAccumulation %>
+
+  if (payload.remainingBitsCount() != 0 || payload.remainingRefsCount() != 0) {
+    throw(ERR_INVALID_INPUTS);
+  }
+
+  return finishGroth16(piA, piB, piC, acc, haveAcc);
+}
+
+fun groth16VerifyArray(
+  piA: slice,
+  piB: slice,
+  piC: slice,
+  pubInputs: array<int>
+): bool {
+  if (pubInputs.size() != N_PUBLIC) { throw(ERR_INVALID_INPUTS); }
+
+  // Compute: cpub = IC0 + sum(pubInputs[i] * IC(i+1))
+  var haveAcc: bool = false;
+  var acc: slice = IC0; // placeholder until haveAcc == true
+
+<%- arrayAccumulation %>
+
+  return finishGroth16(piA, piB, piC, acc, haveAcc);
+}
+
 struct (0x3b3cca17) Verify {
   piA: cell
   piB: cell
@@ -212,18 +344,8 @@ fun verifyProof(msg: Verify): bool {
   var payload: slice = msg.pubInputs;
 
   if (payload.loadUint(8) != N_PUBLIC) { throw(ERR_INVALID_INPUTS); }
-<% if (verifyProofLoads) { -%>
-<%- verifyProofLoads %>
-<% } -%>
-  if (payload.remainingBitsCount() != 0 || payload.remainingRefsCount() != 0) {
-    throw(ERR_INVALID_INPUTS);
-  }
 
-  return groth16Verify(
-    piA,
-    piB,
-    piC<%- verifyCallTail %>
-  );
+  return groth16VerifyPayload(piA, piB, piC, mutate payload);
 }
 
 fun onInternalMessage(inMsg: InMessage) {
@@ -238,11 +360,5 @@ fun onInternalMessage(inMsg: InMessage) {
 }
 
 get fun verify(piA: slice, piB: slice, piC: slice, pubInputs: array<int>): bool {
-  if (pubInputs.size() != N_PUBLIC) { throw(ERR_INVALID_INPUTS); }
-
-  return groth16Verify(
-    piA,
-    piB,
-    piC<%- getterCallTail %>
-  );
+  return groth16VerifyArray(piA, piB, piC, pubInputs);
 }

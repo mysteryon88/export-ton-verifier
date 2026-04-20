@@ -54,21 +54,27 @@ test("renders array-based public input handling for small Groth16 circuits", asy
   assert.doesNotMatch(rendered, /ERR_INDEX_OUT_OF_RANGE/);
 });
 
-test("renders runtime batching helpers only when more than seven public inputs exist", async () => {
+test("renders runtime batches with inline IC selector for circuits with more than seven public inputs", async () => {
   const rendered = await renderTemplate(9);
 
+  assert.match(rendered, /const IC0: slice/);
   assert.match(rendered, /fun ic\(idx: int\): slice/);
-  assert.match(rendered, /fun pubInputAt\(/);
+  assert.match(rendered, /if \(idx == 8\) \{ return "a0/);
   assert.match(rendered, /ERR_INDEX_OUT_OF_RANGE: int = 259/);
   assert.match(rendered, /var full: int = N_PUBLIC \/ 7/);
   assert.match(rendered, /var rem:\s+int = N_PUBLIC % 7/);
+  assert.match(rendered, /while \(full > 0\)/);
   assert.match(rendered, /blsG1Multiexp_7/);
   assert.match(rendered, /blsG1Multiexp_2/);
-  assert.match(rendered, /pubInputAt\(done \+ 6,/);
-  assert.match(rendered, /pubInputs\.get\(8\)/);
+  assert.match(rendered, /ic\(done \+ 1\), y1/);
+  assert.match(rendered, /ic\(done \+ 1\), pubInputs\.get\(done\)/);
+  assert.match(rendered, /pubInputs\.get\(done \+ 1\)/);
   assert.match(rendered, /pubInputs: RemainingBitsAndRefs/);
   assert.match(rendered, /Verify\.fromSlice/);
 
+  assert.doesNotMatch(rendered, /const IC1: slice/);
+  assert.doesNotMatch(rendered, /const IC8: slice/);
+  assert.doesNotMatch(rendered, /fun pubInputAt\(/);
   assert.doesNotMatch(rendered, /uDictGet/);
   assert.doesNotMatch(rendered, /ERR_PUBLIC_NOT_PRESENT/);
   assert.doesNotMatch(rendered, /ERR_TOO_MANY_PUBLICS/);
