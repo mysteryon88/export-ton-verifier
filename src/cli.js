@@ -11,21 +11,20 @@ const __dirname = path.dirname(__filename);
 function printHelp() {
   console.log(`
 Usage:
-  export-ton-verifier <zkeyPath> <outputPath> [--func | --tolk | --tact] [--wrapper-dest <destPath>] [--groth16 | --plonk] [--vk] [--force]
+  export-ton-verifier <zkeyPath> <outputPath> [--func | --tolk | --tact] [--contract-name <name>] [--wrapper-dest <destPath>] [--groth16 | --plonk] [--force]
   export-ton-verifier import-wrapper <destPath> [--func | --tolk] [--groth16 | --plonk] [--force]
 
 Description:
-  1) Generates a TON verifier smart contract from a Circom .zkey file (or verification_key.json with --vk).
+  1) Generates a TON verifier smart contract from a Circom .zkey file or verification_key.json.
      Protocol (Groth16/PLONK) is auto-detected from the .zkey.
   2) (Optional) Can also copy a TypeScript wrapper template to your project.
      Wrapper selection supports language- and protocol-specific files.
 
 Notes:
-  • With --vk, input is treated as verification_key.json (Groth16 only).
   • If language is Tact (--tact), wrapper copy is skipped even if --wrapper-dest is provided.
 
 Arguments:
-  zkeyPath        Path to the .zkey file (or verification_key.json with --vk)
+  zkeyPath        Path to the .zkey file or verification_key.json
   outputPath      Path to save the generated verifier file
 
 Subcommands:
@@ -38,10 +37,10 @@ Options:
   --func                    Use FunC language template for the verifier
   --tolk                    Use Tolk language template for the verifier [default]
   --tact                    Use Tact language template for the verifier
+  --contract-name <name>    Wrap the generated Tolk verifier in a named struct receiver
   --wrapper-dest <destPath> After generation, copy a language-specific TypeScript wrapper to <destPath>
   --groth16                 Protocol hint for wrapper selection (wrapper only; verifier protocol is auto-detected)
   --plonk                   Protocol hint for wrapper selection (wrapper only; verifier protocol is auto-detected)
-  --vk                      Force treat <inputPath> as verification_key.json (Groth16 only)
   --force                   Overwrite existing file when used with 'import-wrapper' or '--wrapper-dest'
 
 Examples:
@@ -49,7 +48,7 @@ Examples:
   npx export-ton-verifier ./circuits/verifier.zkey ./verifier.tolk
 
   # Generate from verification_key.json
-  npx export-ton-verifier ./circuits/verification_key.json ./verifier.tolk --vk
+  npx export-ton-verifier ./circuits/verification_key.json ./verifier.tolk
 
   # Generate FunC verifier
   npx export-ton-verifier ./circuits/verifier.zkey ./verifier.fc --func
@@ -59,6 +58,9 @@ Examples:
 
   # Generate and also drop a wrapper (auto-detect protocol from .zkey)
   npx export-ton-verifier ./circuits/verifier.zkey ./verifier.tolk --wrapper-dest ./wrappers/ --force
+
+  # Generate a named Tolk verifier receiver with getter verify_MultiplierVerifier
+  npx export-ton-verifier ./circuits/verifier.zkey ./verifier.tolk --contract-name multiplierVerifier
 
   # Copy the Tolk Groth16 wrapper (default wrapper language)
   npx export-ton-verifier import-wrapper ./wrappers/ --groth16 --force
@@ -183,6 +185,11 @@ async function main() {
     process.exit(0);
   }
 
+  if (args.includes("--vk")) {
+    console.error("❌ --vk is no longer supported. Use a .json file directly.");
+    process.exit(1);
+  }
+
   // Subcommand: import-wrapper
   if (args[0] === "import-wrapper") {
     const destPath = args[1];
@@ -220,7 +227,7 @@ async function main() {
 
   const [zkeyPath, outputPath] = positional;
   const lang = parseLangFlag(args);
-  const forceJson = args.includes("--vk");
+  const contractName = getFlagValue(args, "--contract-name");
   const wrapperDest = getFlagValue(args, "--wrapper-dest");
   const force = args.includes("--force");
 
@@ -235,7 +242,7 @@ async function main() {
     const detectedProtocol = await generateVerifier(zkeyPath, outputPath, {
       lang,
       templatesDir,
-      forceJson,
+      contractName,
     });
 
     if (wrapperDest) {

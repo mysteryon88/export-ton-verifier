@@ -14,11 +14,12 @@ const templatePath = path.join(
 const dummyG1 = "a0" + "11".repeat(47);
 const dummyG2 = "b0" + "22".repeat(95);
 
-async function renderTemplate(nPublic) {
+async function renderTemplate(nPublic, contractName) {
   const template = await fs.readFile(templatePath, "utf8");
   return ejs.render(template, {
     protocol: "groth16",
     curve: "bn128",
+    contractName,
     vk_alpha_1: dummyG1,
     vk_beta_2: dummyG2,
     vk_gamma_2: dummyG2,
@@ -29,20 +30,28 @@ async function renderTemplate(nPublic) {
   });
 }
 
-test("renders array-based public input handling for small Groth16 circuits", async () => {
+test("renders flat public input handling for small Groth16 circuits when contractName is omitted", async () => {
   const rendered = await renderTemplate(2);
 
+  assert.match(rendered, /const IC0: slice/);
+  assert.match(rendered, /fun groth16VerifyArray\(/);
+  assert.match(rendered, /fun verifyProof\(msg: Verify\): bool/);
+  assert.match(rendered, /struct \(0x3b3cca17\) Verify \{/);
   assert.match(rendered, /pubInputs: RemainingBitsAndRefs/);
   assert.match(rendered, /if \(pubInputs\.size\(\) != N_PUBLIC\)/);
   assert.match(rendered, /pubInputs\.get\(0\)/);
   assert.match(rendered, /pubInputs\.get\(1\)/);
   assert.match(rendered, /ERR_INVALID_INPUTS: int = 258/);
-  assert.match(rendered, /blsG1Multiexp_2/);
+  assert.match(rendered, /fun blsG1Multiexp_2/);
   assert.match(rendered, /\.hexToSlice\(\)/);
   assert.match(rendered, /var payload: slice = msg\.pubInputs;/);
   assert.match(rendered, /loadNextPubInput\(mutate payload\)/);
   assert.match(rendered, /payload\.remainingBitsCount\(\) != 0 \|\| payload\.remainingRefsCount\(\) != 0/);
+  assert.match(rendered, /fun onInternalMessage\(inMsg: InMessage\)/);
   assert.match(rendered, /get fun verify\(piA: slice, piB: slice, piC: slice, pubInputs: array<int>\): bool/);
+  assert.match(rendered, /return groth16VerifyArray\(piA, piB, piC, pubInputs\);/);
+  assert.doesNotMatch(rendered, /struct MyVerifier \{/);
+  assert.doesNotMatch(rendered, /get fun verify_/);
 
   assert.doesNotMatch(rendered, /@stdlib\/tvm-dicts/);
   assert.doesNotMatch(rendered, /stringHexToSlice/);
@@ -54,26 +63,40 @@ test("renders array-based public input handling for small Groth16 circuits", asy
   assert.doesNotMatch(rendered, /ERR_INDEX_OUT_OF_RANGE/);
 });
 
-test("renders runtime batches with inline IC selector for circuits with more than seven public inputs", async () => {
-  const rendered = await renderTemplate(9);
+test("renders struct mode with underscored getter when contractName is provided", async () => {
+  const rendered = await renderTemplate(2, "MyVerifier");
 
-  assert.match(rendered, /const IC0: slice/);
-  assert.match(rendered, /fun ic\(idx: int\): slice/);
-  assert.match(rendered, /if \(idx == 8\) \{ return "a0/);
-  assert.match(rendered, /ERR_INDEX_OUT_OF_RANGE: int = 259/);
-  assert.match(rendered, /var full: int = N_PUBLIC \/ 7/);
-  assert.match(rendered, /var rem:\s+int = N_PUBLIC % 7/);
+  assert.match(rendered, /struct MyVerifier \{/);
+  assert.match(rendered, /fun MyVerifier\.create\(\): MyVerifier/);
+  assert.match(rendered, /fun MyVerifier\.verify\(self, piA: slice, piB: slice, piC: slice, pubInputs: array<int>\): bool/);
+  assert.match(rendered, /fun MyVerifier\.verifyProof\(self, msg: MyVerifierVerify\): bool/);
+  assert.match(rendered, /struct \(0x3b3cca17\) MyVerifierVerify \{/);
+  assert.match(rendered, /MY_VERIFIER_ERR_INVALID_INPUTS: int = 258/);
+  assert.match(rendered, /get fun verify_MyVerifier\(piA: slice, piB: slice, piC: slice, pubInputs: array<int>\): bool/);
+  assert.doesNotMatch(rendered, /get fun verify\(/);
+});
+
+test("renders runtime batches with inline IC selector for struct mode circuits with more than seven public inputs", async () => {
+  const rendered = await renderTemplate(9, "MyVerifier");
+
+  assert.match(rendered, /IC0: slice/);
+  assert.match(rendered, /IC8: slice/);
+  assert.match(rendered, /fun MyVerifier\.ic\(self, idx: int\): slice/);
+  assert.match(rendered, /if \(idx == 8\) \{ return self\.IC8; \}/);
+  assert.match(rendered, /MY_VERIFIER_ERR_INDEX_OUT_OF_RANGE: int = 259/);
+  assert.match(rendered, /var full: int = self\.N_PUBLIC \/ 7/);
+  assert.match(rendered, /var rem:\s+int = self\.N_PUBLIC % 7/);
   assert.match(rendered, /while \(full > 0\)/);
-  assert.match(rendered, /blsG1Multiexp_7/);
-  assert.match(rendered, /blsG1Multiexp_2/);
-  assert.match(rendered, /ic\(done \+ 1\), y1/);
-  assert.match(rendered, /ic\(done \+ 1\), pubInputs\.get\(done\)/);
+  assert.match(rendered, /MyVerifier\.blsG1Multiexp_7/);
+  assert.match(rendered, /MyVerifier\.blsG1Multiexp_2/);
+  assert.match(rendered, /self\.ic\(done \+ 1\), y1/);
+  assert.match(rendered, /self\.ic\(done \+ 1\), pubInputs\.get\(done\)/);
   assert.match(rendered, /pubInputs\.get\(done \+ 1\)/);
   assert.match(rendered, /pubInputs: RemainingBitsAndRefs/);
-  assert.match(rendered, /Verify\.fromSlice/);
+  assert.match(rendered, /MyVerifierVerify\.fromSlice/);
+  assert.match(rendered, /get fun verify_MyVerifier\(/);
+  assert.doesNotMatch(rendered, /get fun verify\(/);
 
-  assert.doesNotMatch(rendered, /const IC1: slice/);
-  assert.doesNotMatch(rendered, /const IC8: slice/);
   assert.doesNotMatch(rendered, /fun pubInputAt\(/);
   assert.doesNotMatch(rendered, /uDictGet/);
   assert.doesNotMatch(rendered, /ERR_PUBLIC_NOT_PRESENT/);

@@ -7,6 +7,8 @@ The protocol (Groth16 or PLONK) is auto-detected from the `.zkey` file.
 
 Verifier code can be generated for three TON languages: **FunC**, **Tolk**, and **Tact**. **Tolk is the default** for both verifier generation and Groth16 wrapper selection; use `--func`, `--tolk`, or `--tact` to override it. TypeScript wrapper templates are selected by language and protocol for `import-wrapper` and `--wrapper-dest`.
 
+By default, the Tolk Groth16 template is generated as a flat contract without a verifier receiver struct. If you pass `--contract-name <name>`, the template switches to struct mode, normalizes names like `secondVerifier` to `SecondVerifier`, and emits the getter as `verify_<Name>`.
+
 ## Installation
 
 ```bash
@@ -38,9 +40,6 @@ npx export-ton-verifier ./circuits/verifier.zkey ./verifier.tolk
 # From verification_key.json (auto-detected by .json):
 npx export-ton-verifier ./circuits/verification_key.json ./verifier.tolk
 
-# Force JSON mode (even if extension is not .json):
-npx export-ton-verifier ./vk.txt ./verifier.tolk --tolk --vk
-
 # Generate FunC verifier:
 npx export-ton-verifier ./circuits/verifier.zkey ./verifier.fc --func
 
@@ -49,6 +48,9 @@ npx export-ton-verifier ./circuits/verifier.zkey ./verifier.tact --tact
 
 # Generate and also drop the TypeScript wrapper:
 npx export-ton-verifier ./circuits/verification_key.json ./verifier.tolk --wrapper-dest ./wrappers/ --force
+
+# Generate a named Tolk verifier receiver:
+npx export-ton-verifier ./circuits/verifier.zkey ./second-verifier.tolk --contract-name secondVerifier
 
 # Only copy the TypeScript wrapper (protocol required; Tolk by default for Groth16):
 npx export-ton-verifier import-wrapper ./wrappers/ --groth16 --force

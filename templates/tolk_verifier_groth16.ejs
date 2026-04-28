@@ -1,5 +1,26 @@
 <%
 const maxBatch = 7;
+const hasStruct = typeof contractName === "string" && contractName.trim() !== "";
+const verifierName = hasStruct ? contractName.trim() : null;
+const verifyMessageName = hasStruct ? `${verifierName}Verify` : "Verify";
+const verifyGetterName = hasStruct ? `verify_${verifierName}` : null;
+const errorPrefix = hasStruct
+  ? verifierName
+      .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
+      .replace(/[^A-Za-z0-9]+/g, "_")
+      .replace(/^_+|_+$/g, "")
+      .toUpperCase()
+  : "";
+const errInvalidInputs = hasStruct
+  ? `${errorPrefix}_ERR_INVALID_INPUTS`
+  : "ERR_INVALID_INPUTS";
+const errIndexOutOfRange = hasStruct
+  ? `${errorPrefix}_ERR_INDEX_OUT_OF_RANGE`
+  : "ERR_INDEX_OUT_OF_RANGE";
+const errWrongProof = hasStruct
+  ? `${errorPrefix}_ERR_WRONG_PROOF`
+  : "ERR_WRONG_PROOF";
+
 let sizes = [];
 
 if (nPublic > 0) {
@@ -15,21 +36,75 @@ if (nPublic > 0) {
 
 const uniqSizes = [...new Set(sizes)];
 const tailSizes = uniqSizes.filter((s) => s !== 7).sort((a, b) => a - b);
-const icConstants = IC
-  .slice(0, nPublic > maxBatch ? 1 : undefined)
-  .map((point, i) => `const IC${i}: slice = "${point}".hexToSlice()`)
+const icFieldDecls = IC.map((_, i) => `  IC${i}: slice`).join("\n");
+const icFieldValues = IC
+  .map((point, i) => `    IC${i}: "${point}".hexToSlice(),`)
   .join("\n");
+const verifierFieldDecls = [
+  icFieldDecls,
+  "  VK_GAMMA_2: slice",
+  "  VK_DELTA_2: slice",
+  "  VK_ALPHA_1: slice",
+  "  VK_BETA_2: slice",
+  "  N_PUBLIC: int",
+].join("\n");
+const verifierFieldValues = [
+  icFieldValues,
+  `    VK_GAMMA_2: "${vk_gamma_2}".hexToSlice(),`,
+  `    VK_DELTA_2: "${vk_delta_2}".hexToSlice(),`,
+  `    VK_ALPHA_1: "${vk_alpha_1}".hexToSlice(),`,
+  `    VK_BETA_2: "${vk_beta_2}".hexToSlice(),`,
+  `    N_PUBLIC: ${nPublic},`,
+].join("\n");
+const icConstants = !hasStruct
+  ? IC.slice(0, nPublic > maxBatch ? 1 : undefined)
+      .map((point, i) => `const IC${i}: slice = "${point}".hexToSlice()`)
+      .join("\n")
+  : "";
 const icSelectorCases = IC
   .slice(1)
-  .map((point, i) => `  if (idx == ${i + 1}) { return "${point}".hexToSlice(); }`)
+  .map((point, i) =>
+    hasStruct
+      ? `  if (idx == ${i + 1}) { return self.IC${i + 1}; }`
+      : `  if (idx == ${i + 1}) { return "${point}".hexToSlice(); }`,
+  )
   .join("\n");
+const nPublicExpr = hasStruct ? "self.N_PUBLIC" : "N_PUBLIC";
+const icZeroExpr = hasStruct ? "self.IC0" : "IC0";
+const vkGammaExpr = hasStruct ? "self.VK_GAMMA_2" : "VK_GAMMA_2";
+const vkDeltaExpr = hasStruct ? "self.VK_DELTA_2" : "VK_DELTA_2";
+const vkAlphaExpr = hasStruct ? "self.VK_ALPHA_1" : "VK_ALPHA_1";
+const vkBetaExpr = hasStruct ? "self.VK_BETA_2" : "VK_BETA_2";
+const addCall = hasStruct ? `${verifierName}.blsG1Add` : "blsG1Add";
+const negCall = hasStruct ? `${verifierName}.blsG1Neg` : "blsG1Neg";
+const pairingCall = hasStruct ? `${verifierName}.blsPairing` : "blsPairing";
+const loadNextPubInputCall = hasStruct
+  ? "self.loadNextPubInput(mutate payload)"
+  : "loadNextPubInput(mutate payload)";
+const finishGroth16Call = hasStruct ? "self.finishGroth16" : "finishGroth16";
+const verifyPayloadCall = hasStruct ? "self.verifyPayload" : "groth16VerifyPayload";
+const verifyProofCall = hasStruct
+  ? `${verifierName}.create().verifyProof(msg)`
+  : "verifyProof(msg)";
+
+function multiexpName(k) {
+  return hasStruct ? `${verifierName}.blsG1Multiexp_${k}` : `blsG1Multiexp_${k}`;
+}
+
+function directPoint(i) {
+  return hasStruct ? `self.IC${i}` : `IC${i}`;
+}
+
+function runtimePoint(expr) {
+  return hasStruct ? `self.ic(${expr})` : `ic(${expr})`;
+}
 
 function renderMultiexpDecl(k) {
   const args = Array.from(
     { length: k },
     (_, i) => `  x${i + 1}: slice, y${i + 1}: int,`,
   ).join("\n");
-  return `@pure\nfun blsG1Multiexp_${k}(\n${args}\n  n: int\n): slice asm "BLS_G1_MULTIEXP";`;
+  return `@pure\nfun ${multiexpName(k)}(\n${args}\n  n: int\n): slice asm "BLS_G1_MULTIEXP";`;
 }
 
 function renderPayloadScalarLoads(count, indent, declare) {
@@ -37,7 +112,7 @@ function renderPayloadScalarLoads(count, indent, declare) {
     { length: count },
     (_, i) => {
       const lhs = declare ? `var y${i + 1}: int` : `y${i + 1}`;
-      return `${indent}${lhs} = loadNextPubInput(mutate payload);`;
+      return `${indent}${lhs} = ${loadNextPubInputCall};`;
     },
   ).join("\n");
 }
@@ -49,26 +124,30 @@ function addExpr(base, offset) {
 function renderDirectPayloadBatchArgs(count, indent) {
   return Array.from(
     { length: count },
-    (_, i) => `${indent}IC${i + 1}, y${i + 1}`,
+    (_, i) => `${indent}${directPoint(i + 1)}, y${i + 1}`,
   ).join(",\n");
 }
 
 function renderDirectArrayBatchArgs(count, indent) {
-  return Array.from({ length: count }, (_, i) => {
-    return `${indent}IC${i + 1}, pubInputs.get(${i})`;
-  }).join(",\n");
+  return Array.from(
+    { length: count },
+    (_, i) => `${indent}${directPoint(i + 1)}, pubInputs.get(${i})`,
+  ).join(",\n");
 }
 
 function renderRuntimePayloadBatchArgs(count, indent) {
-  return Array.from({ length: count }, (_, i) => {
-    return `${indent}ic(done + ${i + 1}), y${i + 1}`;
-  }).join(",\n");
+  return Array.from(
+    { length: count },
+    (_, i) => `${indent}${runtimePoint(`done + ${i + 1}`)}, y${i + 1}`,
+  ).join(",\n");
 }
 
 function renderRuntimeArrayBatchArgs(count, indent) {
-  return Array.from({ length: count }, (_, i) => {
-    return `${indent}ic(done + ${i + 1}), pubInputs.get(${addExpr("done", i)})`;
-  }).join(",\n");
+  return Array.from(
+    { length: count },
+    (_, i) =>
+      `${indent}${runtimePoint(`done + ${i + 1}`)}, pubInputs.get(${addExpr("done", i)})`,
+  ).join(",\n");
 }
 
 function renderPayloadAccumulation() {
@@ -79,7 +158,7 @@ function renderPayloadAccumulation() {
   if (nPublic <= maxBatch) {
     const lines = [];
     lines.push(renderPayloadScalarLoads(nPublic, "  ", true));
-    lines.push(`  acc = blsG1Multiexp_${nPublic}(`);
+    lines.push(`  acc = ${multiexpName(nPublic)}(`);
     lines.push(renderDirectPayloadBatchArgs(nPublic, "    "));
     lines.push(`    , ${nPublic}`);
     lines.push("  );");
@@ -90,12 +169,12 @@ function renderPayloadAccumulation() {
   const lines = [
     "  // Multiple 7-sized batches plus an optional tail.",
     "  var done: int = 0;",
-    "  var full: int = N_PUBLIC / 7;",
-    "  var rem:  int = N_PUBLIC % 7;",
+    `  var full: int = ${nPublicExpr} / 7;`,
+    `  var rem:  int = ${nPublicExpr} % 7;`,
     "",
     "  while (full > 0) {",
     renderPayloadScalarLoads(7, "    ", true),
-    "    var tmp: slice = blsG1Multiexp_7(",
+    `    var tmp: slice = ${multiexpName(7)}(`,
     renderRuntimePayloadBatchArgs(7, "      "),
     "      , 7",
     "    );",
@@ -104,7 +183,7 @@ function renderPayloadAccumulation() {
     "      acc = tmp;",
     "      haveAcc = true;",
     "    } else {",
-    "      acc = blsG1Add(acc, tmp);",
+    `      acc = ${addCall}(acc, tmp);`,
     "    }",
     "",
     "    done += 7;",
@@ -112,27 +191,29 @@ function renderPayloadAccumulation() {
     "  }",
   ];
 
-  const tailBranches = tailSizes.map((r, i) => {
-    const cond = i === 0 ? "if" : "else if";
-    return [
-      `  ${cond} (rem == ${r}) {`,
-      renderPayloadScalarLoads(r, "    ", true),
-      `    var tail: slice = blsG1Multiexp_${r}(`,
-      renderRuntimePayloadBatchArgs(r, "      "),
-      `      , ${r}`,
-      "    );",
-      "",
-      "    if (!haveAcc) {",
-      "      acc = tail;",
-      "      haveAcc = true;",
-      "    } else {",
-      "      acc = blsG1Add(acc, tail);",
-      "    }",
-      "",
-      `    done += ${r};`,
-      "  }",
-    ].join("\n");
-  }).join("\n");
+  const tailBranches = tailSizes
+    .map((r, i) => {
+      const cond = i === 0 ? "if" : "else if";
+      return [
+        `  ${cond} (rem == ${r}) {`,
+        renderPayloadScalarLoads(r, "    ", true),
+        `    var tail: slice = ${multiexpName(r)}(`,
+        renderRuntimePayloadBatchArgs(r, "      "),
+        `      , ${r}`,
+        "    );",
+        "",
+        "    if (!haveAcc) {",
+        "      acc = tail;",
+        "      haveAcc = true;",
+        "    } else {",
+        `      acc = ${addCall}(acc, tail);`,
+        "    }",
+        "",
+        `    done += ${r};`,
+        "  }",
+      ].join("\n");
+    })
+    .join("\n");
 
   if (tailBranches) {
     lines.push("");
@@ -149,7 +230,7 @@ function renderArrayAccumulation() {
 
   if (nPublic <= maxBatch) {
     const lines = [];
-    lines.push(`  acc = blsG1Multiexp_${nPublic}(`);
+    lines.push(`  acc = ${multiexpName(nPublic)}(`);
     lines.push(renderDirectArrayBatchArgs(nPublic, "    "));
     lines.push(`    , ${nPublic}`);
     lines.push("  );");
@@ -160,11 +241,11 @@ function renderArrayAccumulation() {
   const lines = [
     "  // Multiple 7-sized batches plus an optional tail.",
     "  var done: int = 0;",
-    "  var full: int = N_PUBLIC / 7;",
-    "  var rem:  int = N_PUBLIC % 7;",
+    `  var full: int = ${nPublicExpr} / 7;`,
+    `  var rem:  int = ${nPublicExpr} % 7;`,
     "",
     "  while (full > 0) {",
-    "    var tmp: slice = blsG1Multiexp_7(",
+    `    var tmp: slice = ${multiexpName(7)}(`,
     renderRuntimeArrayBatchArgs(7, "      "),
     "      , 7",
     "    );",
@@ -173,7 +254,7 @@ function renderArrayAccumulation() {
     "      acc = tmp;",
     "      haveAcc = true;",
     "    } else {",
-    "      acc = blsG1Add(acc, tmp);",
+    `      acc = ${addCall}(acc, tmp);`,
     "    }",
     "",
     "    done += 7;",
@@ -181,26 +262,28 @@ function renderArrayAccumulation() {
     "  }",
   ];
 
-  const tailBranches = tailSizes.map((r, i) => {
-    const cond = i === 0 ? "if" : "else if";
-    return [
-      `  ${cond} (rem == ${r}) {`,
-      `    var tail: slice = blsG1Multiexp_${r}(`,
-      renderRuntimeArrayBatchArgs(r, "      "),
-      `      , ${r}`,
-      "    );",
-      "",
-      "    if (!haveAcc) {",
-      "      acc = tail;",
-      "      haveAcc = true;",
-      "    } else {",
-      "      acc = blsG1Add(acc, tail);",
-      "    }",
-      "",
-      `    done += ${r};`,
-      "  }",
-    ].join("\n");
-  }).join("\n");
+  const tailBranches = tailSizes
+    .map((r, i) => {
+      const cond = i === 0 ? "if" : "else if";
+      return [
+        `  ${cond} (rem == ${r}) {`,
+        `    var tail: slice = ${multiexpName(r)}(`,
+        renderRuntimeArrayBatchArgs(r, "      "),
+        `      , ${r}`,
+        "    );",
+        "",
+        "    if (!haveAcc) {",
+        "      acc = tail;",
+        "      haveAcc = true;",
+        "    } else {",
+        `      acc = ${addCall}(acc, tail);`,
+        "    }",
+        "",
+        `    done += ${r};`,
+        "  }",
+      ].join("\n");
+    })
+    .join("\n");
 
   if (tailBranches) {
     lines.push("");
@@ -214,6 +297,11 @@ const multiexpDecls = uniqSizes.map((k) => renderMultiexpDecl(k)).join("\n\n");
 const payloadAccumulation = renderPayloadAccumulation();
 const arrayAccumulation = renderArrayAccumulation();
 %>
+<% if (hasStruct) { -%>
+struct <%= verifierName %> {
+<%- verifierFieldDecls %>
+}
+<% } else { -%>
 // IC0 is the constant term
 <%- icConstants %>
 
@@ -223,16 +311,25 @@ const VK_ALPHA_1: slice = "<%= vk_alpha_1 %>".hexToSlice()
 const VK_BETA_2:  slice = "<%= vk_beta_2 %>".hexToSlice()
 
 const N_PUBLIC: int = <%= nPublic %>
-
-const ERR_INVALID_INPUTS: int = 258
-<% if (nPublic > 7) { -%>
-const ERR_INDEX_OUT_OF_RANGE: int = 259
 <% } -%>
-const ERR_WRONG_PROOF: int = 260
 
-@pure fun blsG1Add(x: slice, y: slice): slice asm "BLS_G1_ADD";
-@pure fun blsG1Neg(x: slice): slice       asm "BLS_G1_NEG";
-@pure fun blsPairing(
+const <%= errInvalidInputs %>: int = 258
+<% if (nPublic > 7) { -%>
+const <%= errIndexOutOfRange %>: int = 259
+<% } -%>
+const <%= errWrongProof %>: int = 260
+
+<% if (hasStruct) { -%>
+fun <%= verifierName %>.create(): <%= verifierName %> {
+  return <%= verifierName %> {
+<%- verifierFieldValues %>
+  };
+}
+<% } -%>
+
+@pure fun <%= hasStruct ? `${verifierName}.blsG1Add` : "blsG1Add" %>(x: slice, y: slice): slice asm "BLS_G1_ADD";
+@pure fun <%= hasStruct ? `${verifierName}.blsG1Neg` : "blsG1Neg" %>(x: slice): slice asm "BLS_G1_NEG";
+@pure fun <%= hasStruct ? `${verifierName}.blsPairing` : "blsPairing" %>(
   x1: slice, y1: slice,
   x2: slice, y2: slice,
   x3: slice, y3: slice,
@@ -245,28 +342,31 @@ const ERR_WRONG_PROOF: int = 260
 <% } -%>
 
 <% if (nPublic > 7) { -%>
-// IC selector for runtime batching. The points are inlined to avoid emitting IC1..ICN constants.
-fun ic(idx: int): slice {
+// IC selector for runtime batching. <% if (!hasStruct) { %>The points are inlined to avoid emitting IC1..ICN constants.<% } %>
+fun <%= hasStruct ? `${verifierName}.ic(self, idx: int)` : "ic(idx: int)" %>: slice {
 <%- icSelectorCases %>
-  throw(ERR_INDEX_OUT_OF_RANGE);
+  throw(<%= errIndexOutOfRange %>);
 }
 <% } -%>
 
 <% if (nPublic > 0) { -%>
 // Internal messages carry public inputs as a custom payload:
 // uint8 length, then int257 values chained through refs as needed.
-fun loadNextPubInput(mutate payload: slice): int {
+<% } -%>
+fun <%= hasStruct ? `${verifierName}.loadNextPubInput(self, mutate payload: slice)` : "loadNextPubInput(mutate payload: slice)" %>: int {
   if (payload.remainingBitsCount() < 257) {
     if (payload.remainingBitsCount() != 0 || payload.remainingRefsCount() == 0) {
-      throw(ERR_INVALID_INPUTS);
+      throw(<%= errInvalidInputs %>);
     }
     payload = payload.loadRef().beginParse();
   }
   return payload.loadInt(257);
 }
-<% } -%>
 
-fun finishGroth16(
+fun <%= hasStruct ? `${verifierName}.finishGroth16` : "finishGroth16" %>(
+<% if (hasStruct) { -%>
+  self,
+<% } -%>
   piA: slice,
   piB: slice,
   piC: slice,
@@ -276,25 +376,28 @@ fun finishGroth16(
   // Final cpub = IC0 + acc (IC0 is always added exactly once)
   var cpub: slice;
   if (!haveAcc) {
-    cpub = IC0;
+    cpub = <%= icZeroExpr %>;
   } else {
-    cpub = blsG1Add(acc, IC0);
+    cpub = <%= addCall %>(acc, <%= icZeroExpr %>);
   }
 
   // Pairing check: e(cpub, gamma) * e(-piA, piB) * e(piC, delta) * e(alpha, beta) == 1
-  var piANeg: slice = blsG1Neg(piA);
-  var ok: int = blsPairing(
-    cpub,       VK_GAMMA_2,
-    piANeg,     piB,
-    piC,        VK_DELTA_2,
-    VK_ALPHA_1, VK_BETA_2,
+  var piANeg: slice = <%= negCall %>(piA);
+  var ok: int = <%= pairingCall %>(
+    cpub,         <%= vkGammaExpr %>,
+    piANeg,       piB,
+    piC,          <%= vkDeltaExpr %>,
+    <%= vkAlphaExpr %>, <%= vkBetaExpr %>,
     4
   );
 
   return ok != 0;
 }
 
-fun groth16VerifyPayload(
+fun <%= hasStruct ? `${verifierName}.verifyPayload` : "groth16VerifyPayload" %>(
+<% if (hasStruct) { -%>
+  self,
+<% } -%>
   piA: slice,
   piB: slice,
   piC: slice,
@@ -302,63 +405,70 @@ fun groth16VerifyPayload(
 ): bool {
   // Compute: cpub = IC0 + sum(pubInputs[i] * IC(i+1))
   var haveAcc: bool = false;
-  var acc: slice = IC0; // placeholder until haveAcc == true
+  var acc: slice = <%= icZeroExpr %>; // placeholder until haveAcc == true
 
 <%- payloadAccumulation %>
 
   if (payload.remainingBitsCount() != 0 || payload.remainingRefsCount() != 0) {
-    throw(ERR_INVALID_INPUTS);
+    throw(<%= errInvalidInputs %>);
   }
 
-  return finishGroth16(piA, piB, piC, acc, haveAcc);
+  return <%= finishGroth16Call %>(piA, piB, piC, acc, haveAcc);
 }
 
-fun groth16VerifyArray(
-  piA: slice,
-  piB: slice,
-  piC: slice,
-  pubInputs: array<int>
-): bool {
-  if (pubInputs.size() != N_PUBLIC) { throw(ERR_INVALID_INPUTS); }
+fun <%- hasStruct ? `${verifierName}.verify(self, piA: slice, piB: slice, piC: slice, pubInputs: array<int>)` : "groth16VerifyArray(piA: slice, piB: slice, piC: slice, pubInputs: array<int>)" %>: bool {
+  if (pubInputs.size() != <%= nPublicExpr %>) { throw(<%= errInvalidInputs %>); }
 
   // Compute: cpub = IC0 + sum(pubInputs[i] * IC(i+1))
   var haveAcc: bool = false;
-  var acc: slice = IC0; // placeholder until haveAcc == true
+  var acc: slice = <%= icZeroExpr %>; // placeholder until haveAcc == true
 
 <%- arrayAccumulation %>
 
-  return finishGroth16(piA, piB, piC, acc, haveAcc);
+  return <%= finishGroth16Call %>(piA, piB, piC, acc, haveAcc);
 }
 
-struct (0x3b3cca17) Verify {
+struct (0x3b3cca17) <%= verifyMessageName %> {
   piA: cell
   piB: cell
   piC: cell
   pubInputs: RemainingBitsAndRefs
 }
 
-fun verifyProof(msg: Verify): bool {
+fun <%= hasStruct ? `${verifierName}.verifyProof(self, msg: ${verifyMessageName})` : `verifyProof(msg: ${verifyMessageName})` %>: bool {
   var piA: slice = msg.piA.beginParse();
   var piB: slice = msg.piB.beginParse();
   var piC: slice = msg.piC.beginParse();
   var payload: slice = msg.pubInputs;
 
-  if (payload.loadUint(8) != N_PUBLIC) { throw(ERR_INVALID_INPUTS); }
+  if (payload.loadUint(8) != <%= nPublicExpr %>) { throw(<%= errInvalidInputs %>); }
 
-  return groth16VerifyPayload(piA, piB, piC, mutate payload);
+  return <%= verifyPayloadCall %>(piA, piB, piC, mutate payload);
 }
 
+<% if (hasStruct) { -%>
+// Convenience standalone entrypoints. Remove or rename them when composing
+// multiple verifier structs inside one contract.
+<% } -%>
 fun onInternalMessage(inMsg: InMessage) {
-  val msg = lazy Verify.fromSlice(inMsg.body);
+  val msg = lazy <%= verifyMessageName %>.fromSlice(inMsg.body);
 
   match (msg) {
-    Verify => {
-      assert(verifyProof(msg), ERR_WRONG_PROOF);
+    <%= verifyMessageName %> => {
+      assert(<%= verifyProofCall %>, <%= errWrongProof %>);
     }
     else => {}
   }
 }
 
+<% if (!hasStruct) { -%>
 get fun verify(piA: slice, piB: slice, piC: slice, pubInputs: array<int>): bool {
   return groth16VerifyArray(piA, piB, piC, pubInputs);
 }
+<% } -%>
+
+<% if (hasStruct) { -%>
+get fun <%= verifyGetterName %>(piA: slice, piB: slice, piC: slice, pubInputs: array<int>): bool {
+  return <%= verifierName %>.create().verify(piA, piB, piC, pubInputs);
+}
+<% } -%>

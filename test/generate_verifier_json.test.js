@@ -59,7 +59,6 @@ test("generateVerifier renders the Tolk Groth16 template by default for JSON inp
 
     try {
       protocol = await generateVerifier(inputPath, outputPath, {
-        forceJson: true,
         templatesDir,
       });
     } finally {
@@ -69,9 +68,44 @@ test("generateVerifier renders the Tolk Groth16 template by default for JSON inp
     const rendered = await fs.readFile(outputPath, "utf8");
 
     assert.equal(protocol, "groth16");
+    assert.match(rendered, /const IC0: slice/);
+    assert.match(rendered, /struct \(0x3b3cca17\) Verify \{/);
     assert.match(rendered, /pubInputs: RemainingBitsAndRefs/);
-    assert.match(rendered, /get fun verify\(piA: slice, piB: slice, piC: slice, pubInputs: array<int>\): bool/);
     assert.match(rendered, /\.hexToSlice\(\)/);
     assert.match(rendered, /pubInputs\.get\(1\)/);
+    assert.match(rendered, /get fun verify\(piA: slice, piB: slice, piC: slice, pubInputs: array<int>\): bool/);
+    assert.doesNotMatch(rendered, /struct MyVerifier \{/);
+    assert.doesNotMatch(rendered, /get fun verify_/);
+  });
+});
+
+test("generateVerifier normalizes custom contractName for the Tolk Groth16 template", async () => {
+  await withTempDir(async (tempDir) => {
+    const inputPath = path.join(tempDir, "verification_key.json");
+    const outputPath = path.join(tempDir, "verifier.tolk");
+
+    await writeGroth16JsonVk(inputPath, 2);
+
+    const originalLog = console.log;
+    console.log = () => {};
+
+    try {
+      await generateVerifier(inputPath, outputPath, {
+        contractName: "secondVerifier",
+        templatesDir,
+      });
+    } finally {
+      console.log = originalLog;
+    }
+
+    const rendered = await fs.readFile(outputPath, "utf8");
+
+    assert.match(rendered, /struct SecondVerifier \{/);
+    assert.match(rendered, /fun SecondVerifier\.create\(\): SecondVerifier/);
+    assert.match(rendered, /struct \(0x3b3cca17\) SecondVerifierVerify \{/);
+    assert.match(rendered, /SECOND_VERIFIER_ERR_INVALID_INPUTS: int = 258/);
+    assert.match(rendered, /get fun verify_SecondVerifier\(piA: slice, piB: slice, piC: slice, pubInputs: array<int>\): bool/);
+    assert.match(rendered, /return SecondVerifier\.create\(\)\.verify\(piA, piB, piC, pubInputs\);/);
+    assert.doesNotMatch(rendered, /get fun verify\(/);
   });
 });

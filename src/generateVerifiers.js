@@ -3,20 +3,20 @@ import path from "path";
 import ejs from "ejs";
 import { zKey } from "snarkjs";
 import { utils } from "ffjavascript";
-import { resolveTemplatePath } from "./helpers.js";
+import { normalizeContractName, resolveTemplatePath } from "./helpers.js";
 import { getCurveFromName, g1Compressed, g2Compressed } from "./utils.js";
 import zkeyExportPlonkVerificationKey from "./export_plonk_vk.js";
 
 const { unstringifyBigInts } = utils;
 
 /**
- * Load verification key from .zkey or (when forceJson) from JSON file.
+ * Load verification key from .zkey or JSON file.
  * Only Groth16 is supported when loading from JSON.
  */
-async function loadVerificationKey(inputPath, { forceJson = false } = {}) {
+async function loadVerificationKey(inputPath) {
   const lower = inputPath.toLowerCase();
-  if (forceJson || lower.endsWith(".json")) {
-    console.log("📦 Loading verification key from JSON...");
+  if (lower.endsWith(".json")) {
+    console.log("Loading verification key from JSON...");
     const raw = await fs.readFile(inputPath, "utf8");
     const vkRaw = JSON.parse(raw);
     if (!vkRaw.protocol)
@@ -30,7 +30,7 @@ async function loadVerificationKey(inputPath, { forceJson = false } = {}) {
     return vkRaw;
   }
 
-  console.log("📦 Loading verification key...");
+  console.log("Loading verification key...");
   const vkRaw = await zKey.exportVerificationKey(inputPath);
 
   if (vkRaw.protocol !== "groth16" && vkRaw.protocol !== "plonk") {
@@ -46,7 +46,7 @@ async function loadVerificationKey(inputPath, { forceJson = false } = {}) {
  *
  * @param {string} inputPath - Path to .zkey or verification_key.json
  * @param {string} outputPath
- * @param {{ lang?: 'func'|'tolk'|'tact', templatesDir?: string, forceJson?: boolean }} opts
+ * @param {{ lang?: 'func'|'tolk'|'tact', templatesDir?: string, contractName?: string | null }} opts
  * @returns {Promise<'groth16'|'plonk'>}
  */
 export async function generateVerifier(
@@ -55,17 +55,21 @@ export async function generateVerifier(
   {
     lang = "tolk",
     templatesDir = path.join(process.cwd(), "templates"),
-    forceJson = false,
+    contractName = null,
   } = {},
 ) {
-  const vkRaw = await loadVerificationKey(inputPath, { forceJson });
+  const vkRaw = await loadVerificationKey(inputPath);
+  const normalizedContractName =
+    typeof contractName === "string" && contractName.trim()
+      ? normalizeContractName(contractName)
+      : null;
 
   const templatePath = await resolveTemplatePath(
     templatesDir,
     lang,
     vkRaw.protocol,
   );
-  console.log(`🧩 Using template for: ${lang} ${vkRaw.protocol}`);
+  console.log(`Using template for: ${lang} ${vkRaw.protocol}`);
 
   let curve;
   try {
@@ -73,10 +77,11 @@ export async function generateVerifier(
       const vk = unstringifyBigInts(vkRaw);
       curve = await getCurveFromName(vkRaw.curve);
 
-      console.log("🔄 Compressing points...");
+      console.log("Compressing points...");
       const data = {
         protocol: "groth16",
         curve: vkRaw.curve,
+        contractName: normalizedContractName,
         vk_alpha_1: g1Compressed(curve, vk.vk_alpha_1),
         vk_beta_2: g2Compressed(curve, vk.vk_beta_2),
         vk_gamma_2: g2Compressed(curve, vk.vk_gamma_2),
@@ -87,26 +92,28 @@ export async function generateVerifier(
         _raw: vkRaw,
       };
 
-      console.log("📄 Rendering template...");
+      console.log("Rendering template...");
       const template = await fs.readFile(templatePath, "utf8");
       const rendered = ejs.render(template, data);
 
-      console.log(`💾 Saving file: ${outputPath}`);
+      console.log(`Saving file: ${outputPath}`);
       await fs.writeFile(outputPath, rendered, "utf8");
-      console.log("✅ Done.");
+      console.log("Done.");
 
       return "groth16";
     }
 
-    // PLONK
-    console.log("📄 Rendering template for PLONK...");
+    console.log("Rendering template for PLONK...");
     const template = await fs.readFile(templatePath, "utf8");
-    const verificationKey = await zkeyExportPlonkVerificationKey(inputPath);
+    const verificationKey = {
+      ...(await zkeyExportPlonkVerificationKey(inputPath)),
+      contractName: normalizedContractName,
+    };
     const rendered = ejs.render(template, verificationKey);
 
-    console.log(`💾 Saving file: ${outputPath}`);
+    console.log(`Saving file: ${outputPath}`);
     await fs.writeFile(outputPath, rendered, "utf8");
-    console.log("✅ Done.");
+    console.log("Done.");
 
     return "plonk";
   } finally {

@@ -33,6 +33,24 @@ export async function resolveTemplatePath(templatesDir, lang, protocol) {
   );
 }
 
+export function normalizeContractName(name = "MyVerifier") {
+  const raw = String(name ?? "").trim();
+  if (!raw) return "MyVerifier";
+
+  const parts = raw.match(/[A-Za-z0-9]+/g) ?? [];
+  if (parts.length === 0) return "MyVerifier";
+
+  let normalized = parts
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join("");
+
+  if (!/^[A-Za-z_]/.test(normalized)) {
+    normalized = `_${normalized}`;
+  }
+
+  return normalized;
+}
+
 function log2(V) {
   return (
     ((V & 0xffff0000) !== 0 ? ((V &= 0xffff0000), 16) : 0) |

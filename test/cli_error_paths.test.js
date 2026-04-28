@@ -95,3 +95,14 @@ test("CLI reports missing values for --wrapper-dest before touching the input fi
   assert.match(result.stderr, /Missing value for --wrapper-dest/);
   assert.doesNotMatch(result.stderr, /Input file not found/);
 });
+
+test("CLI rejects the removed --vk flag", () => {
+  const result = runCliExpectFailure([
+    "verification_key.json",
+    "verifier.tolk",
+    "--vk",
+  ]);
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /--vk is no longer supported/);
+});
