@@ -33,7 +33,7 @@ const lagrangeEvalLines = Array.from({ length: nLagrange }, (_, index) => {
   const i = index + 1;
   const lines = [
     i === 1
-      ? "  var evalL1: int = mulmod(invd.read(1), zh, blsR());"
+      ? "  val evalL1: int = mulmod(invd.read(1), zh, blsR());"
       : `  restEvals.setAt(${i}, mulmod(w, mulmod(invd.read(${i}), zh, blsR()), blsR()));`,
   ];
   if (i < nLagrange) {
@@ -103,13 +103,19 @@ enum <%= errorsName %> {
 @pure
 fun blsPairing(ag1: slice, ag2: slice, bg1: slice, bg2: slice): int asm "2 PUSHINT BLS_PAIRING";
 
+/// # Safety
 /// Keccak256 transcript hash compatible with snarkjs PLONK.
+/// Expects `p` to contain at most 255 transcript items in the exact snarkjs order.
 @pure
 fun keccak256Tuple(p: tuple): int asm "255 PUSHINT EXPLODEVAR HASHEXT_KECCAK256";
 
+/// # Safety
+/// Reads the TVM BLS12-381 scalar field modulus; it has no caller-controlled inputs.
 @pure
 fun blsR(): int asm "BLS_PUSHR";
 
+/// # Safety
+/// Expects `z` to be a non-zero modulus; verifier callers pass `blsR()`.
 @pure
 fun mulmod(x: int, y: int, z: int): int asm "MULMOD";
 

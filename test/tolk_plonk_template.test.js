@@ -66,6 +66,8 @@ test("renders PLONK verifier as Tolk contract instead of FunC", async () => {
   assert.match(rendered, /while \(pi < N_PUBLIC\)/);
   assert.match(rendered, /betaHash\.push\(publicInputs\.read\(pi\)\.scalarToSlice\(\)\);/);
   assert.match(rendered, /checkPublicInputCount\(publicInputs, N_PUBLIC\);/);
+  assert.match(rendered, /val evalL1: int = mulmod\(invd\.read\(1\), zh, blsR\(\)\);/);
+  assert.doesNotMatch(rendered, /var evalL1: int/);
   assert.match(rendered, /return blsPairing\(blsG1Neg\(a1\), X_2, b1, BLS_G2\) != 0;/);
   assert.match(rendered, /fun onInternalMessage\(inMsg: InMessage\)/);
   assert.match(rendered, /assert \(inMsg\.body\.isEmpty\(\)\) throw VerifierErrors\.InvalidMessage;/);
@@ -76,6 +78,32 @@ test("renders PLONK verifier as Tolk contract instead of FunC", async () => {
   assert.doesNotMatch(rendered, /recv_internal/);
   assert.doesNotMatch(rendered, /method_id/);
   assert.doesNotMatch(rendered, /throw\(/);
+});
+
+test("documents safety requirements for every PLONK Tolk asm helper", async () => {
+  const rendered = await renderTemplate(2);
+  const lines = rendered.split(/\r?\n/);
+
+  for (const helper of [
+    "blsPairing",
+    "keccak256Tuple",
+    "blsR",
+    "mulmod",
+    "blsG1Add",
+    "blsG1Mul",
+    "blsG1Sub",
+    "blsG1Neg",
+  ]) {
+    const helperLine = lines.findIndex((line) =>
+      line.includes(`fun ${helper}(`) && line.includes(' asm "'),
+    );
+    assert.notEqual(helperLine, -1, `${helper} asm declaration should render`);
+    assert.match(
+      lines.slice(Math.max(0, helperLine - 4), helperLine).join("\n"),
+      /\/\/\/ # Safety/,
+      `${helper} should have a nearby # Safety doc comment before its asm declaration`,
+    );
+  }
 });
 
 test("renders named PLONK contract metadata when contractName is provided", async () => {
