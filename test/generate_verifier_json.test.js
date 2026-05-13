@@ -103,9 +103,11 @@ test("generateVerifier normalizes custom contractName for the Tolk Groth16 templ
     assert.match(rendered, /struct SecondVerifier \{/);
     assert.match(rendered, /fun SecondVerifier\.create\(\): SecondVerifier/);
     assert.match(rendered, /struct \(0x3b3cca17\) SecondVerifierVerify \{/);
-    assert.match(rendered, /SECOND_VERIFIER_ERR_INVALID_INPUTS: int = 258/);
+    assert.match(rendered, /enum SecondVerifierErrors \{\s*InvalidInputs = 258,\s*WrongProof = 260,\s*\}/);
+    assert.match(rendered, /throw SecondVerifierErrors\.InvalidInputs;/);
     assert.match(rendered, /get fun verify_SecondVerifier\(piA: slice, piB: slice, piC: slice, pubInputs: array<int>\): bool/);
     assert.match(rendered, /return SecondVerifier\.create\(\)\.verify\(piA, piB, piC, pubInputs\);/);
+    assert.doesNotMatch(rendered, /SECOND_VERIFIER_ERR_INVALID_INPUTS/);
     assert.doesNotMatch(rendered, /get fun verify\(/);
   });
 });

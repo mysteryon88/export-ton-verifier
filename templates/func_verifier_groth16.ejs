@@ -91,8 +91,6 @@ int bls_pairing(slice x1, slice y1, slice x2, slice y2, slice x3, slice y3, slic
     slice piC,
     cell pubInputs
 ) impure {
-    int res = 0;
-
 <% if (nPublic === 0) { -%>
     ;; no public inputs: cpub = IC0
     ;; IMPORTANT: when nPublic == 0, pubInputs must be empty (no extra keys allowed)
@@ -123,12 +121,7 @@ int bls_pairing(slice x1, slice y1, slice x2, slice y2, slice x3, slice y3, slic
         4
     );
 
-    if (a == 0) {
-        res = 0;
-    } else {
-        res = 1;
-    }
-    return (res);
+    return (0 - (a != 0));
 }
 
 (int) verifyProof(
@@ -147,7 +140,7 @@ int bls_pairing(slice x1, slice y1, slice x2, slice y2, slice x3, slice y3, slic
     );
 }
 
-() recv_internal(int my_balance, int msg_value, cell in_msg_full, slice in_msg_body) impure {
+() recv_internal(cell in_msg_full, slice in_msg_body) impure {
     if (in_msg_body.slice_empty?()) {
         return ();
     }
@@ -159,8 +152,7 @@ int bls_pairing(slice x1, slice y1, slice x2, slice y2, slice x3, slice y3, slic
     int op = in_msg_body~load_uint(32);
 
     if (op == op::verify) {
-        int res = verifyProof(in_msg_body);
-        throw_unless(verifier::err::wrong_proof, res == 1);
+        throw_unless(verifier::err::wrong_proof, verifyProof(in_msg_body));
         return ();
     }
     throw(0xffff);

@@ -65,10 +65,10 @@ test("import-wrapper copies Func and Tolk Groth16 wrappers separately, with Tolk
   });
 });
 
-test("import-wrapper falls back to the generic PLONK wrapper when no language-specific file exists", async () => {
+test("import-wrapper defaults PLONK wrapper selection to Tolk and falls back to the generic wrapper", async () => {
   await withTempDir(async (tempDir) => {
     const destPath = path.join(tempDir, "plonk.ts");
-    importWrapper(destPath, ["--plonk", "--tolk"]);
+    importWrapper(destPath, ["--plonk"]);
 
     const [copied, expected] = await Promise.all([
       fs.readFile(destPath, "utf8"),

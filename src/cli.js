@@ -21,6 +21,8 @@ Description:
      Wrapper selection supports language- and protocol-specific files.
 
 Notes:
+  • Tolk is the default for Groth16 and PLONK verifier generation.
+    Use --func to generate FunC output.
   • If language is Tact (--tact), wrapper copy is skipped even if --wrapper-dest is provided.
 
 Arguments:
@@ -44,13 +46,13 @@ Options:
   --force                   Overwrite existing file when used with 'import-wrapper' or '--wrapper-dest'
 
 Examples:
-  # Generate Tolk verifier from .zkey (default language)
+  # Generate Tolk verifier from .zkey (default language for Groth16 and PLONK)
   npx export-ton-verifier ./circuits/verifier.zkey ./verifier.tolk
 
   # Generate from verification_key.json
   npx export-ton-verifier ./circuits/verification_key.json ./verifier.tolk
 
-  # Generate FunC verifier
+  # Generate FunC verifier (requires --func)
   npx export-ton-verifier ./circuits/verifier.zkey ./verifier.fc --func
 
   # Generate Tact verifier
@@ -65,7 +67,10 @@ Examples:
   # Copy the Tolk Groth16 wrapper (default wrapper language)
   npx export-ton-verifier import-wrapper ./wrappers/ --groth16 --force
 
-  # Only copy the TypeScript wrapper (protocol required here)
+  # Copy the PLONK TypeScript wrapper with the default language selection
+  npx export-ton-verifier import-wrapper ./wrappers/ --plonk --force
+
+  # Copy the PLONK TypeScript wrapper for FunC
   npx export-ton-verifier import-wrapper ./wrappers/ --plonk --func --force
 `);
 }

@@ -41,6 +41,21 @@ function runCliExpectFailure(args) {
   }
 }
 
+function runCliSuccess(args) {
+  return execFileSync(process.execPath, [cliPath, ...args], {
+    cwd: repoRoot,
+    stdio: "pipe",
+    encoding: "utf8",
+  });
+}
+
+test("CLI help states Tolk is the default for PLONK and FunC needs --func", () => {
+  const output = runCliSuccess(["--help"]);
+
+  assert.match(output, /Tolk is the default for Groth16 and PLONK verifier generation/);
+  assert.match(output, /Use --func to generate FunC output/);
+});
+
 test("CLI rejects conflicting language flags for import-wrapper", async () => {
   await withTempDir(async (tempDir) => {
     const destPath = path.join(tempDir, "Verifier.ts");

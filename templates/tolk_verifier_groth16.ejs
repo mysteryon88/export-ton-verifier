@@ -2,24 +2,14 @@
 const maxBatch = 7;
 const hasStruct = typeof contractName === "string" && contractName.trim() !== "";
 const verifierName = hasStruct ? contractName.trim() : null;
+const publicContractName = verifierName ?? "Verifier";
+const storageName = `${publicContractName}Storage`;
 const verifyMessageName = hasStruct ? `${verifierName}Verify` : "Verify";
 const verifyGetterName = hasStruct ? `verify_${verifierName}` : null;
-const errorPrefix = hasStruct
-  ? verifierName
-      .replace(/([a-z0-9])([A-Z])/g, "$1_$2")
-      .replace(/[^A-Za-z0-9]+/g, "_")
-      .replace(/^_+|_+$/g, "")
-      .toUpperCase()
-  : "";
-const errInvalidInputs = hasStruct
-  ? `${errorPrefix}_ERR_INVALID_INPUTS`
-  : "ERR_INVALID_INPUTS";
-const errIndexOutOfRange = hasStruct
-  ? `${errorPrefix}_ERR_INDEX_OUT_OF_RANGE`
-  : "ERR_INDEX_OUT_OF_RANGE";
-const errWrongProof = hasStruct
-  ? `${errorPrefix}_ERR_WRONG_PROOF`
-  : "ERR_WRONG_PROOF";
+const errorsName = `${publicContractName}Errors`;
+const errInvalidInputs = `${errorsName}.InvalidInputs`;
+const errIndexOutOfRange = `${errorsName}.IndexOutOfRange`;
+const errWrongProof = `${errorsName}.WrongProof`;
 
 let sizes = [];
 
@@ -36,25 +26,29 @@ if (nPublic > 0) {
 
 const uniqSizes = [...new Set(sizes)];
 const tailSizes = uniqSizes.filter((s) => s !== 7).sort((a, b) => a - b);
-const icFieldDecls = IC.map((_, i) => `  IC${i}: slice`).join("\n");
+function icFieldName(i) {
+  return `ic${i}`;
+}
+
+const icFieldDecls = IC.map((_, i) => `  ${icFieldName(i)}: slice`).join("\n");
 const icFieldValues = IC
-  .map((point, i) => `    IC${i}: "${point}".hexToSlice(),`)
+  .map((point, i) => `    ${icFieldName(i)}: "${point}".hexToSlice(),`)
   .join("\n");
 const verifierFieldDecls = [
   icFieldDecls,
-  "  VK_GAMMA_2: slice",
-  "  VK_DELTA_2: slice",
-  "  VK_ALPHA_1: slice",
-  "  VK_BETA_2: slice",
-  "  N_PUBLIC: int",
+  "  vkGamma2: slice",
+  "  vkDelta2: slice",
+  "  vkAlpha1: slice",
+  "  vkBeta2: slice",
+  "  nPublic: int",
 ].join("\n");
 const verifierFieldValues = [
   icFieldValues,
-  `    VK_GAMMA_2: "${vk_gamma_2}".hexToSlice(),`,
-  `    VK_DELTA_2: "${vk_delta_2}".hexToSlice(),`,
-  `    VK_ALPHA_1: "${vk_alpha_1}".hexToSlice(),`,
-  `    VK_BETA_2: "${vk_beta_2}".hexToSlice(),`,
-  `    N_PUBLIC: ${nPublic},`,
+  `    vkGamma2: "${vk_gamma_2}".hexToSlice(),`,
+  `    vkDelta2: "${vk_delta_2}".hexToSlice(),`,
+  `    vkAlpha1: "${vk_alpha_1}".hexToSlice(),`,
+  `    vkBeta2: "${vk_beta_2}".hexToSlice(),`,
+  `    nPublic: ${nPublic},`,
 ].join("\n");
 const icConstants = !hasStruct
   ? IC.slice(0, nPublic > maxBatch ? 1 : undefined)
@@ -65,21 +59,21 @@ const icSelectorCases = IC
   .slice(1)
   .map((point, i) =>
     hasStruct
-      ? `  if (idx == ${i + 1}) { return self.IC${i + 1}; }`
+      ? `  if (idx == ${i + 1}) { return self.${icFieldName(i + 1)}; }`
       : `  if (idx == ${i + 1}) { return "${point}".hexToSlice(); }`,
   )
   .join("\n");
-const nPublicExpr = hasStruct ? "self.N_PUBLIC" : "N_PUBLIC";
-const icZeroExpr = hasStruct ? "self.IC0" : "IC0";
-const vkGammaExpr = hasStruct ? "self.VK_GAMMA_2" : "VK_GAMMA_2";
-const vkDeltaExpr = hasStruct ? "self.VK_DELTA_2" : "VK_DELTA_2";
-const vkAlphaExpr = hasStruct ? "self.VK_ALPHA_1" : "VK_ALPHA_1";
-const vkBetaExpr = hasStruct ? "self.VK_BETA_2" : "VK_BETA_2";
+const nPublicExpr = hasStruct ? "self.nPublic" : "N_PUBLIC";
+const icZeroExpr = hasStruct ? "self.ic0" : "IC0";
+const vkGammaExpr = hasStruct ? "self.vkGamma2" : "VK_GAMMA_2";
+const vkDeltaExpr = hasStruct ? "self.vkDelta2" : "VK_DELTA_2";
+const vkAlphaExpr = hasStruct ? "self.vkAlpha1" : "VK_ALPHA_1";
+const vkBetaExpr = hasStruct ? "self.vkBeta2" : "VK_BETA_2";
 const addCall = hasStruct ? `${verifierName}.blsG1Add` : "blsG1Add";
 const negCall = hasStruct ? `${verifierName}.blsG1Neg` : "blsG1Neg";
 const pairingCall = hasStruct ? `${verifierName}.blsPairing` : "blsPairing";
 const loadNextPubInputCall = hasStruct
-  ? "self.loadNextPubInput(mutate payload)"
+  ? `${verifierName}.loadNextPubInput(mutate payload)`
   : "loadNextPubInput(mutate payload)";
 const finishGroth16Call = hasStruct ? "self.finishGroth16" : "finishGroth16";
 const verifyPayloadCall = hasStruct ? "self.verifyPayload" : "groth16VerifyPayload";
@@ -88,11 +82,11 @@ const verifyProofCall = hasStruct
   : "verifyProof(msg)";
 
 function multiexpName(k) {
-  return hasStruct ? `${verifierName}.blsG1Multiexp_${k}` : `blsG1Multiexp_${k}`;
+  return hasStruct ? `${verifierName}.blsG1Multiexp${k}` : `blsG1Multiexp${k}`;
 }
 
 function directPoint(i) {
-  return hasStruct ? `self.IC${i}` : `IC${i}`;
+  return hasStruct ? `self.${icFieldName(i)}` : `IC${i}`;
 }
 
 function runtimePoint(expr) {
@@ -104,14 +98,23 @@ function renderMultiexpDecl(k) {
     { length: k },
     (_, i) => `  x${i + 1}: slice, y${i + 1}: int,`,
   ).join("\n");
-  return `@pure\nfun ${multiexpName(k)}(\n${args}\n  n: int\n): slice asm "BLS_G1_MULTIEXP";`;
+  return [
+    "/// # Safety",
+    `/// Expects x1..x${k} to be canonical BLS12-381 G1 points and y1..y${k}`,
+    '/// to be scalars encoded in the format expected by TVM `BLS_G1_MULTIEXP`.',
+    "@pure",
+    `fun ${multiexpName(k)}(`,
+    args,
+    "  n: int",
+    '): slice asm "BLS_G1_MULTIEXP";',
+  ].join("\n");
 }
 
 function renderPayloadScalarLoads(count, indent, declare) {
   return Array.from(
     { length: count },
     (_, i) => {
-      const lhs = declare ? `var y${i + 1}: int` : `y${i + 1}`;
+      const lhs = declare ? `val y${i + 1}: int` : `y${i + 1}`;
       return `${indent}${lhs} = ${loadNextPubInputCall};`;
     },
   ).join("\n");
@@ -169,12 +172,12 @@ function renderPayloadAccumulation() {
   const lines = [
     "  // Multiple 7-sized batches plus an optional tail.",
     "  var done: int = 0;",
-    `  var full: int = ${nPublicExpr} / 7;`,
-    `  var rem:  int = ${nPublicExpr} % 7;`,
+    `  val full: int = ${nPublicExpr} / 7;`,
+    `  val rem:  int = ${nPublicExpr} % 7;`,
     "",
-    "  while (full > 0) {",
+    "  while (done < full * 7) {",
     renderPayloadScalarLoads(7, "    ", true),
-    `    var tmp: slice = ${multiexpName(7)}(`,
+    `    val tmp: slice = ${multiexpName(7)}(`,
     renderRuntimePayloadBatchArgs(7, "      "),
     "      , 7",
     "    );",
@@ -187,7 +190,6 @@ function renderPayloadAccumulation() {
     "    }",
     "",
     "    done += 7;",
-    "    full -= 1;",
     "  }",
   ];
 
@@ -197,7 +199,7 @@ function renderPayloadAccumulation() {
       return [
         `  ${cond} (rem == ${r}) {`,
         renderPayloadScalarLoads(r, "    ", true),
-        `    var tail: slice = ${multiexpName(r)}(`,
+        `    val tail: slice = ${multiexpName(r)}(`,
         renderRuntimePayloadBatchArgs(r, "      "),
         `      , ${r}`,
         "    );",
@@ -241,11 +243,11 @@ function renderArrayAccumulation() {
   const lines = [
     "  // Multiple 7-sized batches plus an optional tail.",
     "  var done: int = 0;",
-    `  var full: int = ${nPublicExpr} / 7;`,
-    `  var rem:  int = ${nPublicExpr} % 7;`,
+    `  val full: int = ${nPublicExpr} / 7;`,
+    `  val rem:  int = ${nPublicExpr} % 7;`,
     "",
-    "  while (full > 0) {",
-    `    var tmp: slice = ${multiexpName(7)}(`,
+    "  while (done < full * 7) {",
+    `    val tmp: slice = ${multiexpName(7)}(`,
     renderRuntimeArrayBatchArgs(7, "      "),
     "      , 7",
     "    );",
@@ -258,7 +260,6 @@ function renderArrayAccumulation() {
     "    }",
     "",
     "    done += 7;",
-    "    full -= 1;",
     "  }",
   ];
 
@@ -267,7 +268,7 @@ function renderArrayAccumulation() {
       const cond = i === 0 ? "if" : "else if";
       return [
         `  ${cond} (rem == ${r}) {`,
-        `    var tail: slice = ${multiexpName(r)}(`,
+        `    val tail: slice = ${multiexpName(r)}(`,
         renderRuntimeArrayBatchArgs(r, "      "),
         `      , ${r}`,
         "    );",
@@ -297,6 +298,15 @@ const multiexpDecls = uniqSizes.map((k) => renderMultiexpDecl(k)).join("\n\n");
 const payloadAccumulation = renderPayloadAccumulation();
 const arrayAccumulation = renderArrayAccumulation();
 %>
+contract <%= publicContractName %> {
+  description: "Groth16 verifier generated by export-ton-verifier"
+  storage: <%= storageName %>
+  incomingMessages: <%= verifyMessageName %>
+}
+
+/// Empty persistent storage; verifier constants are embedded in code.
+struct <%= storageName %> {}
+
 <% if (hasStruct) { -%>
 struct <%= verifierName %> {
 <%- verifierFieldDecls %>
@@ -313,11 +323,13 @@ const VK_BETA_2:  slice = "<%= vk_beta_2 %>".hexToSlice()
 const N_PUBLIC: int = <%= nPublic %>
 <% } -%>
 
-const <%= errInvalidInputs %>: int = 258
+enum <%= errorsName %> {
+  InvalidInputs = 258,
 <% if (nPublic > 7) { -%>
-const <%= errIndexOutOfRange %>: int = 259
+  IndexOutOfRange = 259,
 <% } -%>
-const <%= errWrongProof %>: int = 260
+  WrongProof = 260,
+}
 
 <% if (hasStruct) { -%>
 fun <%= verifierName %>.create(): <%= verifierName %> {
@@ -327,8 +339,19 @@ fun <%= verifierName %>.create(): <%= verifierName %> {
 }
 <% } -%>
 
+/// # Safety
+/// Expects both slices to contain canonically encoded BLS12-381 G1 points
+/// accepted by the TVM `BLS_G1_ADD` opcode.
 @pure fun <%= hasStruct ? `${verifierName}.blsG1Add` : "blsG1Add" %>(x: slice, y: slice): slice asm "BLS_G1_ADD";
+
+/// # Safety
+/// Expects the slice to contain a canonically encoded BLS12-381 G1 point
+/// accepted by the TVM `BLS_G1_NEG` opcode.
 @pure fun <%= hasStruct ? `${verifierName}.blsG1Neg` : "blsG1Neg" %>(x: slice): slice asm "BLS_G1_NEG";
+
+/// # Safety
+/// Expects the provided slices to contain canonically encoded BLS12-381 proof
+/// and verification-key points in the order required by TVM `BLS_PAIRING`.
 @pure fun <%= hasStruct ? `${verifierName}.blsPairing` : "blsPairing" %>(
   x1: slice, y1: slice,
   x2: slice, y2: slice,
@@ -345,7 +368,7 @@ fun <%= verifierName %>.create(): <%= verifierName %> {
 // IC selector for runtime batching. <% if (!hasStruct) { %>The points are inlined to avoid emitting IC1..ICN constants.<% } %>
 fun <%= hasStruct ? `${verifierName}.ic(self, idx: int)` : "ic(idx: int)" %>: slice {
 <%- icSelectorCases %>
-  throw(<%= errIndexOutOfRange %>);
+  throw <%= errIndexOutOfRange %>;
 }
 <% } -%>
 
@@ -353,10 +376,10 @@ fun <%= hasStruct ? `${verifierName}.ic(self, idx: int)` : "ic(idx: int)" %>: sl
 // Internal messages carry public inputs as a custom payload:
 // uint8 length, then int257 values chained through refs as needed.
 <% } -%>
-fun <%= hasStruct ? `${verifierName}.loadNextPubInput(self, mutate payload: slice)` : "loadNextPubInput(mutate payload: slice)" %>: int {
+fun <%= hasStruct ? `${verifierName}.loadNextPubInput(mutate payload: slice)` : "loadNextPubInput(mutate payload: slice)" %>: int {
   if (payload.remainingBitsCount() < 257) {
     if (payload.remainingBitsCount() != 0 || payload.remainingRefsCount() == 0) {
-      throw(<%= errInvalidInputs %>);
+      throw <%= errInvalidInputs %>;
     }
     payload = payload.loadRef().beginParse();
   }
@@ -382,8 +405,8 @@ fun <%= hasStruct ? `${verifierName}.finishGroth16` : "finishGroth16" %>(
   }
 
   // Pairing check: e(cpub, gamma) * e(-piA, piB) * e(piC, delta) * e(alpha, beta) == 1
-  var piANeg: slice = <%= negCall %>(piA);
-  var ok: int = <%= pairingCall %>(
+  val piANeg: slice = <%= negCall %>(piA);
+  val ok: int = <%= pairingCall %>(
     cpub,         <%= vkGammaExpr %>,
     piANeg,       piB,
     piC,          <%= vkDeltaExpr %>,
@@ -410,14 +433,14 @@ fun <%= hasStruct ? `${verifierName}.verifyPayload` : "groth16VerifyPayload" %>(
 <%- payloadAccumulation %>
 
   if (payload.remainingBitsCount() != 0 || payload.remainingRefsCount() != 0) {
-    throw(<%= errInvalidInputs %>);
+    throw <%= errInvalidInputs %>;
   }
 
   return <%= finishGroth16Call %>(piA, piB, piC, acc, haveAcc);
 }
 
 fun <%- hasStruct ? `${verifierName}.verify(self, piA: slice, piB: slice, piC: slice, pubInputs: array<int>)` : "groth16VerifyArray(piA: slice, piB: slice, piC: slice, pubInputs: array<int>)" %>: bool {
-  if (pubInputs.size() != <%= nPublicExpr %>) { throw(<%= errInvalidInputs %>); }
+  if (pubInputs.size() != <%= nPublicExpr %>) { throw <%= errInvalidInputs %>; }
 
   // Compute: cpub = IC0 + sum(pubInputs[i] * IC(i+1))
   var haveAcc: bool = false;
@@ -428,20 +451,25 @@ fun <%- hasStruct ? `${verifierName}.verify(self, piA: slice, piB: slice, piC: s
   return <%= finishGroth16Call %>(piA, piB, piC, acc, haveAcc);
 }
 
+/// Internal message containing Groth16 proof points and serialized public inputs.
 struct (0x3b3cca17) <%= verifyMessageName %> {
+  /// G1 proof point piA.
   piA: cell
+  /// G2 proof point piB.
   piB: cell
+  /// G1 proof point piC.
   piC: cell
+  /// uint8 length followed by int257 public inputs chained through refs.
   pubInputs: RemainingBitsAndRefs
 }
 
 fun <%= hasStruct ? `${verifierName}.verifyProof(self, msg: ${verifyMessageName})` : `verifyProof(msg: ${verifyMessageName})` %>: bool {
-  var piA: slice = msg.piA.beginParse();
-  var piB: slice = msg.piB.beginParse();
-  var piC: slice = msg.piC.beginParse();
+  val piA: slice = msg.piA.beginParse();
+  val piB: slice = msg.piB.beginParse();
+  val piC: slice = msg.piC.beginParse();
   var payload: slice = msg.pubInputs;
 
-  if (payload.loadUint(8) != <%= nPublicExpr %>) { throw(<%= errInvalidInputs %>); }
+  if (payload.loadUint(8) != <%= nPublicExpr %>) { throw <%= errInvalidInputs %>; }
 
   return <%= verifyPayloadCall %>(piA, piB, piC, mutate payload);
 }
@@ -455,19 +483,23 @@ fun onInternalMessage(inMsg: InMessage) {
 
   match (msg) {
     <%= verifyMessageName %> => {
-      assert(<%= verifyProofCall %>, <%= errWrongProof %>);
+      assert (<%= verifyProofCall %>) throw <%= errWrongProof %>;
     }
-    else => {}
+    else => {
+      assert (inMsg.body.isEmpty()) throw <%= errInvalidInputs %>;
+    }
   }
 }
 
 <% if (!hasStruct) { -%>
+/// Verifies a Groth16 proof against public inputs.
 get fun verify(piA: slice, piB: slice, piC: slice, pubInputs: array<int>): bool {
   return groth16VerifyArray(piA, piB, piC, pubInputs);
 }
 <% } -%>
 
 <% if (hasStruct) { -%>
+/// Verifies a Groth16 proof against public inputs.
 get fun <%= verifyGetterName %>(piA: slice, piB: slice, piC: slice, pubInputs: array<int>): bool {
   return <%= verifierName %>.create().verify(piA, piB, piC, pubInputs);
 }

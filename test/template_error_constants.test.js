@@ -36,6 +36,9 @@ test("Func Groth16 template omits unused index-out-of-range errors", async () =>
   assert.doesNotMatch(withPublics, /index_out_of_range/);
   assert.doesNotMatch(noPublics, /public_not_present/);
   assert.match(withPublics, /public_not_present/);
+  assert.doesNotMatch(withPublics, /int res = 0/);
+  assert.match(withPublics, /return \(0 - \(a != 0\)\);/);
+  assert.match(withPublics, /\(\) recv_internal\(cell in_msg_full, slice in_msg_body\) impure/);
 });
 
 test("Tact Groth16 template omits unused error constants and helpers", async () => {
@@ -47,11 +50,18 @@ test("Tact Groth16 template omits unused error constants and helpers", async () 
 
   assert.doesNotMatch(noPublics, /ERR_PUBLIC_NOT_PRESENT/);
   assert.doesNotMatch(noPublics, /fun getPub/);
+  assert.match(noPublics, /pubInputs\.isEmpty\(\)/);
+  assert.doesNotMatch(noPublics, /pubInputs\.exists\(0\)/);
   assert.match(withPublics, /ERR_PUBLIC_NOT_PRESENT/);
+  assert.match(withPublics, /fun assertNoExtraPubInputs/);
+  assert.match(withPublics, /foreach \(key, _ in pubInputs\)/);
   assert.match(withPublics, /fun getPub/);
+  assert.doesNotMatch(withPublics, /Cheap guard/);
 
   assert.doesNotMatch(noPublics, /ERR_INDEX_OUT_OF_RANGE/);
   assert.doesNotMatch(withPublics, /ERR_INDEX_OUT_OF_RANGE/);
   assert.doesNotMatch(batched, /ERR_INDEX_OUT_OF_RANGE/);
   assert.match(batched, /fun ic\(idx: Int\): Slice/);
+  assert.doesNotMatch(batched, /const IC8: Slice/);
+  assert.match(batched, /return rawSlice/);
 });

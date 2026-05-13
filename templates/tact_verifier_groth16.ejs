@@ -16,12 +16,13 @@ if (nPublic <= 0) {
 const uniqSizes = [...new Set(sizes)];
 const fullBatches = Math.floor(nPublic / 7);
 const tailSize = nPublic % 7;
-const icConstants = IC
+const emittedIC = nPublic > maxBatch ? IC.slice(0, 1) : IC;
+const icConstants = emittedIC
   .map((point, i) => `const IC${i}: Slice = rawSlice("${point}");`)
   .join("\n");
 const icSelectorCases = IC
   .slice(1)
-  .map((_, i) => `  if (idx == ${i + 1}) { return IC${i + 1}; }`)
+  .map((point, i) => `  if (idx == ${i + 1}) { return rawSlice("${point}"); }`)
   .join("\n");
 const singleBatchArgs = Array.from({ length: nPublic }, (_, i) => {
   return `      IC${i + 1}, getPub(pubInputs, ${i})`;
@@ -83,6 +84,12 @@ fun ic(idx: Int): Slice {
 <% } -%>
 
 <% if (nPublic > 0) { -%>
+fun assertNoExtraPubInputs(pubInputs: map<Int as uint32, Int>) {
+  foreach (key, _ in pubInputs) {
+    nativeThrowUnless(ERR_TOO_MANY_PUBLICS, key < <%= nPublic %>);
+  }
+}
+
 // Safe getter for public inputs: throws ERR_PUBLIC_NOT_PRESENT
 fun getPub(pubInputs: map<Int as uint32, Int>, k: Int): Int {
   let v = pubInputs.get(k);
@@ -117,41 +124,43 @@ contract Verifier {
     pubInputs: map<Int as uint32, Int>
   ): Bool {
 
-    // acc = sum(v_i * IC_{i+1}) (only the public-dependent part)
-    let haveAcc: Bool = false;
-    let acc: Slice = IC0; // placeholder until haveAcc = true
-
 <% if (nPublic === 0) { -%>
     // No public inputs allowed
-    nativeThrowIf(ERR_TOO_MANY_PUBLICS, pubInputs.exists(0));
+    nativeThrowUnless(ERR_TOO_MANY_PUBLICS, pubInputs.isEmpty());
+    let cpub: Slice = IC0;
 <% } else if (nPublic <= 7) { -%>
+    assertNoExtraPubInputs(pubInputs);
+
     // Single batch (no loop and no ic())
-    acc = blsG1Multiexp_<%= nPublic %>(
+    let acc: Slice = blsG1Multiexp_<%= nPublic %>(
 <%- singleBatchArgs %>
       , <%= nPublic %>
     );
-    haveAcc = true;
 
-    // Cheap guard: reject obvious extras
-    nativeThrowIf(ERR_TOO_MANY_PUBLICS, pubInputs.exists(<%= nPublic %>));
+    let cpub: Slice = blsG1Add(acc, IC0);
 
 <% } else { -%>
-    // Loop over full batches of 7
+    assertNoExtraPubInputs(pubInputs);
+
+    // First full batch of 7
     let done: Int = 0;
     let batchesLeft: Int = <%= fullBatches %>;
+    let acc: Slice = blsG1Multiexp_7(
+<%- fullBatchArgs %>
+        , 7
+    );
 
+    done += 7;
+    batchesLeft -= 1;
+
+    // Remaining full batches of 7
     while (batchesLeft > 0) {
       let tmp: Slice = blsG1Multiexp_7(
 <%- fullBatchArgs %>
         , 7
       );
 
-      if (!haveAcc) {
-        acc = tmp;
-        haveAcc = true;
-      } else {
-        acc = blsG1Add(acc, tmp);
-      }
+      acc = blsG1Add(acc, tmp);
 
       done += 7;
       batchesLeft -= 1;
@@ -164,22 +173,13 @@ contract Verifier {
       , <%= tailSize %>
     );
 
-    if (!haveAcc) {
-      acc = tail;
-      haveAcc = true;
-    } else {
-      acc = blsG1Add(acc, tail);
-    }
+    acc = blsG1Add(acc, tail);
 
     done += <%= tailSize %>;
 <% } -%>
 
-    // Cheap guard: reject obvious extras
-    nativeThrowIf(ERR_TOO_MANY_PUBLICS, pubInputs.exists(<%= nPublic %>));
+    let cpub: Slice = blsG1Add(acc, IC0);
 <% } -%>
-
-    // cpub = IC0 + acc (IC0 is added exactly once)
-    let cpub: Slice = haveAcc ? blsG1Add(acc, IC0) : IC0;
 
     // Pairing check
     let piANeg: Slice = blsG1Neg(piA);
