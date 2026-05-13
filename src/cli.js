@@ -56,10 +56,10 @@ Examples:
   npx export-ton-verifier ./circuits/verifier.zkey ./verifier.fc --func
 
   # Generate Tact verifier
-  npx export-ton-verifier ./circuits/verifier.zkey ./verifier.tact --tact --wrapper-dest ./wrappers/
+  npx export-ton-verifier ./circuits/verifier.zkey ./verifier.tact --tact
 
-  # Generate and also drop a wrapper (auto-detect protocol from .zkey)
-  npx export-ton-verifier ./circuits/verifier.zkey ./verifier.tolk --wrapper-dest ./wrappers/ --force
+  # Generate and also drop a wrapper (auto-detect protocol from the input artifact)
+  npx export-ton-verifier ./circuits/verification_key.json ./verifier.tolk --wrapper-dest ./wrappers/ --force
 
   # Generate a named Tolk verifier receiver with getter verify_MultiplierVerifier
   npx export-ton-verifier ./circuits/verifier.zkey ./verifier.tolk --contract-name multiplierVerifier
@@ -230,21 +230,21 @@ async function main() {
     process.exit(1);
   }
 
-  const [zkeyPath, outputPath] = positional;
+  const [inputPath, outputPath] = positional;
   const lang = parseLangFlag(args);
   const contractName = getFlagValue(args, "--contract-name");
   const wrapperDest = getFlagValue(args, "--wrapper-dest");
   const force = args.includes("--force");
 
-  if (!fileExists(zkeyPath)) {
-    console.error(`❌ Input file not found: ${zkeyPath}`);
+  if (!fileExists(inputPath)) {
+    console.error(`❌ Input file not found: ${inputPath}`);
     process.exit(1);
   }
 
   const templatesDir = path.join(__dirname, "../templates");
 
   try {
-    const detectedProtocol = await generateVerifier(zkeyPath, outputPath, {
+    const detectedProtocol = await generateVerifier(inputPath, outputPath, {
       lang,
       templatesDir,
       contractName,
