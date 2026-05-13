@@ -11,12 +11,12 @@ const __dirname = path.dirname(__filename);
 function printHelp() {
   console.log(`
 Usage:
-  export-ton-verifier <zkeyPath> <outputPath> [--func | --tolk | --tact] [--contract-name <name>] [--wrapper-dest <destPath>] [--groth16 | --plonk] [--force]
+  export-ton-verifier <inputPath> <outputPath> [--func | --tolk | --tact] [--contract-name <name>] [--wrapper-dest <destPath>] [--groth16 | --plonk] [--force]
   export-ton-verifier import-wrapper <destPath> [--func | --tolk] [--groth16 | --plonk] [--force]
 
 Description:
   1) Generates a TON verifier smart contract from a Circom .zkey file or verification_key.json.
-     Protocol (Groth16/PLONK) is auto-detected from the .zkey.
+     Protocol (Groth16/PLONK) is auto-detected from the input artifact.
   2) (Optional) Can also copy a TypeScript wrapper template to your project.
      Wrapper selection supports language- and protocol-specific files.
 
@@ -26,7 +26,7 @@ Notes:
   • If language is Tact (--tact), wrapper copy is skipped even if --wrapper-dest is provided.
 
 Arguments:
-  zkeyPath        Path to the .zkey file or verification_key.json
+  inputPath       Path to the .zkey file or verification_key.json
   outputPath      Path to save the generated verifier file
 
 Subcommands:

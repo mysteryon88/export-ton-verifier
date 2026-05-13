@@ -23,8 +23,12 @@ import * as binFileUtils from "@iden3/binfileutils";
 import { utils } from "ffjavascript";
 
 import { readHeaderPlonk } from "./helpers.js";
+import { getCurveFromName } from "./utils.js";
 
-const { stringifyBigInts } = utils;
+const { stringifyBigInts, unstringifyBigInts } = utils;
+
+const G1_KEYS = ["Qm", "Ql", "Qr", "Qo", "Qc", "S1", "S2", "S3"];
+const G1_UC_KEYS = ["Qm_uc", "Ql_uc", "Qr_uc", "Qo_uc", "Qc_uc", "S1_uc", "S2_uc", "S3_uc"];
 
 export default async function zkeyExportPlonkVerificationKey(zkeyName) {
   const { fd, sections } = await binFileUtils.readBinFile(zkeyName, "zkey", 2);
@@ -38,11 +42,81 @@ export default async function zkeyExportPlonkVerificationKey(zkeyName) {
   return res;
 }
 
+export async function normalizePlonkVerificationKey(vkRaw) {
+  if (vkRaw.protocol !== "plonk") {
+    throw new Error(`Expected PLONK verification key (got '${vkRaw.protocol}').`);
+  }
+
+  if (isTemplateReadyPlonkVerificationKey(vkRaw)) {
+    return stringifyBigInts(vkRaw);
+  }
+
+  const vk = unstringifyBigInts(vkRaw);
+  const curve = await getCurveFromName(vkRaw.curve);
+
+  try {
+    const res = {
+      protocol: "plonk",
+      curve: curve.name,
+      nPublic: numberField(vkRaw, "nPublic"),
+      power: numberField(vkRaw, "power"),
+      k1: scalarToString(curve, vk.k1, "k1"),
+      k2: scalarToString(curve, vk.k2, "k2"),
+      w:
+        vk.w === undefined
+          ? scalarToString(curve, curve.Fr.w[numberField(vkRaw, "power")], "w")
+          : scalarToString(curve, vk.w, "w"),
+      X_2: pointObjectToBlstCHex(curve.G2, vk.X_2, "X_2"),
+    };
+
+    for (const key of G1_KEYS) {
+      res[key] = pointObjectToBlstCHex(curve.G1, vk[key], key);
+      res[`${key}_uc`] = pointObjectToUncompressedHex(curve.G1, vk[key], key);
+    }
+
+    return stringifyBigInts(res);
+  } finally {
+    if (typeof curve.terminate === "function") {
+      await curve.terminate();
+    }
+  }
+}
+
+function isTemplateReadyPlonkVerificationKey(vkRaw) {
+  return (
+    G1_KEYS.every((key) => typeof vkRaw[key] === "string") &&
+    G1_UC_KEYS.every((key) => typeof vkRaw[key] === "string") &&
+    typeof vkRaw.X_2 === "string"
+  );
+}
+
+function numberField(vkRaw, key) {
+  const value = Number(vkRaw[key]);
+  if (!Number.isInteger(value) || value < 0) {
+    throw new Error(`verification_key: invalid '${key}'.`);
+  }
+  return value;
+}
+
+function scalarToString(curve, value, key) {
+  if (value === undefined || value === null) {
+    throw new Error(`verification_key: missing '${key}'.`);
+  }
+  return curve.Fr.toObject(curve.Fr.fromObject(value)).toString();
+}
+
 function ffC2blstC(a, offset = 0) {
   if (a[offset] & 0x80) {
     a[offset] |= 0x20;
   }
   a[offset] |= 0x80;
+}
+
+function pointObjectToBlstCHex(curve, p, key) {
+  if (p === undefined || p === null) {
+    throw new Error(`verification_key: missing '${key}'.`);
+  }
+  return pointToBlstCHex(curve, curve.fromObject(p));
 }
 
 function pointToBlstCHex(curve, p) {
@@ -52,6 +126,13 @@ function pointToBlstCHex(curve, p) {
   ffC2blstC(tmp, 0);
 
   return Buffer.from(tmp).toString("hex");
+}
+
+function pointObjectToUncompressedHex(curve, p, key) {
+  if (p === undefined || p === null) {
+    throw new Error(`verification_key: missing '${key}'.`);
+  }
+  return pointToUncompressedHex(curve, curve.fromObject(p));
 }
 
 function pointToUncompressedHex(curve, p) {

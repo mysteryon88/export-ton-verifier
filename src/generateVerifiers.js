@@ -5,13 +5,14 @@ import { zKey } from "snarkjs";
 import { utils } from "ffjavascript";
 import { normalizeContractName, resolveTemplatePath } from "./helpers.js";
 import { getCurveFromName, g1Compressed, g2Compressed } from "./utils.js";
-import zkeyExportPlonkVerificationKey from "./export_plonk_vk.js";
+import zkeyExportPlonkVerificationKey, {
+  normalizePlonkVerificationKey,
+} from "./export_plonk_vk.js";
 
 const { unstringifyBigInts } = utils;
 
 /**
  * Load verification key from .zkey or JSON file.
- * Only Groth16 is supported when loading from JSON.
  */
 async function loadVerificationKey(inputPath) {
   const lower = inputPath.toLowerCase();
@@ -22,9 +23,9 @@ async function loadVerificationKey(inputPath) {
     if (!vkRaw.protocol)
       throw new Error("verification_key: missing 'protocol'.");
     if (!vkRaw.curve) throw new Error("verification_key: missing 'curve'.");
-    if (vkRaw.protocol !== "groth16") {
+    if (vkRaw.protocol !== "groth16" && vkRaw.protocol !== "plonk") {
       throw new Error(
-        `Only Groth16 is supported from JSON (got '${vkRaw.protocol}').`,
+        `Only Groth16 and PLONK are supported from JSON (got '${vkRaw.protocol}').`,
       );
     }
     return vkRaw;
@@ -105,8 +106,11 @@ export async function generateVerifier(
 
     console.log("Rendering template for PLONK...");
     const template = await fs.readFile(templatePath, "utf8");
+    const isJsonInput = inputPath.toLowerCase().endsWith(".json");
     const verificationKey = {
-      ...(await zkeyExportPlonkVerificationKey(inputPath)),
+      ...(isJsonInput
+        ? await normalizePlonkVerificationKey(vkRaw)
+        : await zkeyExportPlonkVerificationKey(inputPath)),
       contractName: normalizedContractName,
     };
     const rendered = ejs.render(template, verificationKey);

@@ -46,6 +46,37 @@ async function writeGroth16JsonVk(filePath, nPublic = 2) {
   }
 }
 
+async function writePlonkJsonVk(filePath, nPublic = 1) {
+  const curve = await getCurveFromName("bls12381");
+
+  try {
+    const g1 = curve.G1.toObject(curve.G1.g);
+    const g2 = curve.G2.toObject(curve.G2.g);
+    const vk = stringifyBigInts({
+      protocol: "plonk",
+      curve: "bls12381",
+      nPublic,
+      power: 4,
+      k1: 2n,
+      k2: 3n,
+      Qm: g1,
+      Ql: g1,
+      Qr: g1,
+      Qo: g1,
+      Qc: g1,
+      S1: g1,
+      S2: g1,
+      S3: g1,
+      X_2: g2,
+      w: 13n,
+    });
+
+    await fs.writeFile(filePath, JSON.stringify(vk), "utf8");
+  } finally {
+    await curve.terminate();
+  }
+}
+
 test("generateVerifier renders the Tolk Groth16 template by default for JSON inputs", async () => {
   await withTempDir(async (tempDir) => {
     const inputPath = path.join(tempDir, "verification_key.json");
@@ -109,5 +140,39 @@ test("generateVerifier normalizes custom contractName for the Tolk Groth16 templ
     assert.match(rendered, /return SecondVerifier\.create\(\)\.verify\(piA, piB, piC, pubInputs\);/);
     assert.doesNotMatch(rendered, /SECOND_VERIFIER_ERR_INVALID_INPUTS/);
     assert.doesNotMatch(rendered, /get fun verify\(/);
+  });
+});
+
+test("generateVerifier renders the Tolk PLONK template from verification_key.json", async () => {
+  await withTempDir(async (tempDir) => {
+    const inputPath = path.join(tempDir, "verification_key.json");
+    const outputPath = path.join(tempDir, "verifier.tolk");
+
+    await writePlonkJsonVk(inputPath, 1);
+
+    const originalLog = console.log;
+    let protocol;
+    console.log = () => {};
+
+    try {
+      protocol = await generateVerifier(inputPath, outputPath, {
+        templatesDir,
+      });
+    } finally {
+      console.log = originalLog;
+    }
+
+    const rendered = await fs.readFile(outputPath, "utf8");
+
+    assert.equal(protocol, "plonk");
+    assert.match(rendered, /contract Verifier \{/);
+    assert.match(rendered, /const QM: slice = "[0-9a-f]{96}"\.hexToSlice\(\)/);
+    assert.match(rendered, /const QM_UC: slice = "[0-9a-f]{192}"\.hexToSlice\(\)/);
+    assert.match(rendered, /const X_2: slice = "[0-9a-f]{192}"\.hexToSlice\(\)/);
+    assert.match(rendered, /const K1: int = 2/);
+    assert.match(rendered, /const K2: int = 3/);
+    assert.match(rendered, /const W1: int = 13/);
+    assert.match(rendered, /const N_PUBLIC: int = 1/);
+    assert.doesNotMatch(rendered, /\[object Object\]/);
   });
 });

@@ -113,7 +113,7 @@ test("CLI reports missing values for --wrapper-dest before touching the input fi
 
 test("CLI rejects the removed --vk flag", () => {
   const result = runCliExpectFailure([
-    "verification_key.json",
+    "unused-input.json",
     "verifier.tolk",
     "--vk",
   ]);

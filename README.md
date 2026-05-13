@@ -3,7 +3,7 @@
 **Export TON Verifier** is a CLI tool and JavaScript library for generating **Groth16** and **PLONK** (experimental, **Circom**) smart contract verifiers for the TON blockchain from `.zkey` or `.json` verification key files.
 
 It integrates with the **snarkjs** library and supports circuits built with **Circom**, **Noname**, **Gnark**, and **Arkworks** (via `verification_key.json`).
-The protocol (Groth16 or PLONK) is auto-detected from the `.zkey` file.
+The protocol (Groth16 or PLONK) is auto-detected from `.zkey` and `verification_key.json` inputs.
 
 Verifier code can be generated for three TON languages: **FunC**, **Tolk**, and **Tact**. **Tolk is the default** for both Groth16 and PLONK verifier generation; pass `--func` explicitly when you need FunC output, or `--tact` for Tact. TypeScript wrapper templates are selected by language and protocol for `import-wrapper` and `--wrapper-dest`.
 
