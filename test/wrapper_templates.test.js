@@ -65,18 +65,52 @@ test("import-wrapper copies Func and Tolk Groth16 wrappers separately, with Tolk
   });
 });
 
-test("import-wrapper defaults PLONK wrapper selection to Tolk and falls back to the generic wrapper", async () => {
+test("import-wrapper defaults PLONK wrapper selection to the Tolk PLONK wrapper", async () => {
   await withTempDir(async (tempDir) => {
     const destPath = path.join(tempDir, "plonk.ts");
     importWrapper(destPath, ["--plonk"]);
 
     const [copied, expected] = await Promise.all([
       fs.readFile(destPath, "utf8"),
-      readTemplate("Verifier_plonk.ts"),
+      readTemplate("Verifier_tolk_plonk.ts"),
     ]);
 
     assert.equal(copied, expected);
   });
+});
+
+test("import-wrapper copies the Func-specific PLONK wrapper for Func", async () => {
+  await withTempDir(async (tempDir) => {
+    const destPath = path.join(tempDir, "plonk-func.ts");
+    importWrapper(destPath, ["--plonk", "--func"]);
+
+    const [copied, expected] = await Promise.all([
+      fs.readFile(destPath, "utf8"),
+      readTemplate("Verifier_func_plonk.ts"),
+    ]);
+
+    assert.equal(copied, expected);
+    assert.doesNotMatch(copied, /proofMessageToCell/);
+    assert.doesNotMatch(copied, /TupleBuilder/);
+    assert.doesNotMatch(copied, /serializeUint256Array/);
+  });
+});
+
+test("PLONK wrappers keep Func and Tolk public input layouts separate", async () => {
+  const [funcWrapper, tolkWrapper] = await Promise.all([
+    readTemplate("Verifier_func_plonk.ts"),
+    readTemplate("Verifier_tolk_plonk.ts"),
+  ]);
+
+  assert.match(funcWrapper, /getVerify\(provider: ContractProvider, args: TupleItem\[\]\)/);
+  assert.doesNotMatch(funcWrapper, /Dictionary/);
+  assert.doesNotMatch(funcWrapper, /proofMessageToCell/);
+
+  assert.match(tolkWrapper, /proofMessageToCell/);
+  assert.match(tolkWrapper, /requirePublicInputTuple/);
+  assert.doesNotMatch(tolkWrapper, /Dictionary/);
+  assert.doesNotMatch(tolkWrapper, /requireContiguousPublicInputs/);
+  assert.doesNotMatch(tolkWrapper, /replacePublicInputsWithTuple/);
 });
 
 test("import-wrapper rejects Tact wrappers", async () => {

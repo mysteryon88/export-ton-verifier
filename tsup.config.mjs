@@ -13,6 +13,7 @@ export default defineConfig([
       "src/cli.js",
       "src/generateVerifiers.js",
       "src/export_plonk_vk.js",
+      "src/export_plonk_calldata.js",
       "src/export_plonk_func_calldata.js",
       "src/helpers.js",
       "src/curves.js",

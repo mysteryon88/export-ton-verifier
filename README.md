@@ -5,7 +5,7 @@
 It integrates with the **snarkjs** library and supports circuits built with **Circom**, **Noname**, **Gnark**, and **Arkworks** (via `verification_key.json`).
 The protocol (Groth16 or PLONK) is auto-detected from `.zkey` and `verification_key.json` inputs.
 
-Verifier code can be generated for three TON languages: **FunC**, **Tolk**, and **Tact**. **Tolk is the default** for both Groth16 and PLONK verifier generation; pass `--func` explicitly when you need FunC output, or `--tact` for Tact. TypeScript wrapper templates are selected by language and protocol for `import-wrapper` and `--wrapper-dest`.
+Verifier code can be generated for **FunC** and **Tolk** for both Groth16 and PLONK. **Tact** generation is available for Groth16. **Tolk is the default** for both Groth16 and PLONK verifier generation; pass `--func` explicitly when you need FunC output, or `--tact` for the Tact Groth16 template. TypeScript wrapper templates are selected by language and protocol for `import-wrapper` and `--wrapper-dest`.
 
 By default, the Tolk Groth16 template is generated as a flat contract without a verifier receiver struct. If you pass `--contract-name <name>`, the template switches to struct mode, normalizes names like `secondVerifier` to `SecondVerifier`, and emits the getter as `verify_<Name>`.
 
@@ -27,9 +27,12 @@ import {
   generateVerifier,
   zkeyExportPlonkVerificationKey,
   exportPlonkFuncCalldata,
+  exportPlonkTolkCalldata,
   calldataToTupleItems,
 } from "export-ton-verifier";
 ```
+
+`exportPlonkFuncCalldata` returns the legacy Func-compatible calldata where public inputs are a dictionary cell. `exportPlonkTolkCalldata` returns the Tolk getter-compatible calldata where public inputs are already a tuple.
 
 ## Usage CLI
 
@@ -57,6 +60,10 @@ npx export-ton-verifier import-wrapper ./wrappers/ --groth16 --force
 npx export-ton-verifier import-wrapper ./wrappers/ --groth16 --func --force
 npx export-ton-verifier import-wrapper ./wrappers/ --plonk --force
 npx export-ton-verifier import-wrapper ./wrappers/ --plonk --func --force
+
+# Copy both PLONK wrappers without overwriting each other:
+npx export-ton-verifier import-wrapper ./wrappers/Verifier_tolk_plonk.ts --plonk --tolk --force
+npx export-ton-verifier import-wrapper ./wrappers/Verifier_func_plonk.ts --plonk --func --force
 ```
 
 ## References

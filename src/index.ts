@@ -6,5 +6,6 @@ export { generateVerifier } from "./generateVerifiers.js";
 export { default as zkeyExportPlonkVerificationKey } from "./export_plonk_vk.js";
 export {
   exportPlonkFuncCalldata,
+  exportPlonkTolkCalldata,
   calldataToTupleItems,
-} from "./export_plonk_func_calldata.js";
+} from "./export_plonk_calldata.js";

@@ -29,4 +29,8 @@ export function exportPlonkFuncCalldata(
   proof: unknown,
   publicSignals: unknown,
 ): Promise<TupleItem[]>;
+export function exportPlonkTolkCalldata(
+  proof: unknown,
+  publicSignals: unknown,
+): Promise<TupleItem[]>;
 export function calldataToTupleItems(calldata: TupleItem[]): TupleItem[];
