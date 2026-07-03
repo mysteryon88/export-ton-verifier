@@ -1,9 +1,11 @@
 # Export TON Verifier
 
-**Export TON Verifier** is a CLI tool and JavaScript library for generating **Groth16** and **PLONK** (experimental, **Circom**) smart contract verifiers for the TON blockchain from `.zkey` or `.json` verification key files.
+**Export TON Verifier** is a CLI tool and JavaScript library for generating **Groth16** and **PLONK** (experimental, **Circom**) smart contract verifiers for the TON blockchain from `.zkey`, `.bin`, or `.json` verification key files.
 
-It integrates with the **snarkjs** library and supports circuits built with **Circom**, **Noname**, **Gnark**, and **Arkworks** (via `verification_key.json`).
-The protocol (Groth16 or PLONK) is auto-detected from `.zkey` and `verification_key.json` inputs.
+It integrates with the **snarkjs** library and supports circuits built with **Circom**, **Noname**, **Gnark**, and **Arkworks**.
+The protocol (Groth16 or PLONK) is auto-detected from `.zkey` and snarkjs-compatible `verification_key.json` inputs.
+Groth16 BLS12-381 verification keys are also supported natively from gnark JSON (`verification_key_gnark.json`), gnark binary (`verification_key.bin`), and arkworks compressed JSON/bundle files (`groth16_artifacts.json` or VK-only JSON with `curve` and `vk`/`verification_key`/`verifying_key`).
+TON verifier templates use TVM BLS12-381 opcodes, so generated on-chain verifiers require BLS12-381 verification keys. Native gnark and arkworks loaders accept BLS12-381 artifacts only, and snarkjs-compatible inputs are rejected before rendering when their curve is not BLS12-381.
 
 Verifier code can be generated for **FunC** and **Tolk** for both Groth16 and PLONK. **Tact** generation is available for Groth16. **Tolk is the default** for both Groth16 and PLONK verifier generation; pass `--func` explicitly when you need FunC output, or `--tact` for the Tact Groth16 template. TypeScript wrapper templates are selected by language and protocol for `import-wrapper` and `--wrapper-dest`.
 
@@ -29,10 +31,16 @@ import {
   exportPlonkFuncCalldata,
   exportPlonkTolkCalldata,
   calldataToTupleItems,
+  inspectVerifierInput,
+  proofToMessageBoc,
+  MAX_PLONK_PUBLIC_INPUTS,
 } from "export-ton-verifier";
 ```
 
 `exportPlonkFuncCalldata` returns the legacy Func-compatible calldata where public inputs are a dictionary cell. `exportPlonkTolkCalldata` returns the Tolk getter-compatible calldata where public inputs are already a tuple.
+`inspectVerifierInput` powers the `doctor` command and reports format, protocol, curve, public input count, template availability, and TVM limit checks.
+`proofToMessageBoc` converts proof/public-signal JSON into a base64 or hex BOC internal message body for supported generated verifier templates.
+PLONK verifier generation supports at most `MAX_PLONK_PUBLIC_INPUTS` public inputs because the TVM Keccak transcript helper is limited to 255 tuple items.
 
 ## Usage CLI
 
@@ -42,6 +50,15 @@ npx export-ton-verifier ./circuits/verifier.zkey ./verifier.tolk
 
 # From verification_key.json (auto-detected by .json):
 npx export-ton-verifier ./circuits/verification_key.json ./verifier.tolk
+
+# From native BLS12-381 gnark JSON:
+npx export-ton-verifier ./circuits/verification_key_gnark.json ./verifier.tolk
+
+# From native BLS12-381 gnark binary:
+npx export-ton-verifier ./circuits/verification_key.bin ./verifier.tolk
+
+# From native BLS12-381 arkworks compressed bundle/VK JSON:
+npx export-ton-verifier ./circuits/groth16_artifacts.json ./verifier.tolk
 
 # Generate FunC verifier (requires --func):
 npx export-ton-verifier ./circuits/verifier.zkey ./verifier.fc --func
@@ -54,6 +71,14 @@ npx export-ton-verifier ./circuits/verification_key.json ./verifier.tolk --wrapp
 
 # Generate a named Tolk verifier receiver:
 npx export-ton-verifier ./circuits/verifier.zkey ./second-verifier.tolk --contract-name secondVerifier
+
+# Diagnose whether an artifact can be generated for a language:
+npx export-ton-verifier doctor ./circuits/verification_key.json --tolk
+npx export-ton-verifier doctor ./circuits/verification_key.json --json
+
+# Convert proof/public JSON into an internal message body BOC:
+npx export-ton-verifier proof-to-message ./circuits/proof.json ./circuits/public.json --groth16 --tolk
+npx export-ton-verifier proof-to-message ./circuits/proof.json ./circuits/public.json --plonk --tolk --format hex --output ./body.hex
 
 # Only copy the TypeScript wrapper (protocol required; Tolk/default selection when language is omitted):
 npx export-ton-verifier import-wrapper ./wrappers/ --groth16 --force

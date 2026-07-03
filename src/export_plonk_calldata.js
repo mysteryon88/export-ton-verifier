@@ -2,6 +2,7 @@ import { getCurveFromName } from "./curves.js";
 import { utils } from "ffjavascript";
 const { unstringifyBigInts } = utils;
 import { beginCell, Cell, Dictionary } from "@ton/core";
+import { assertPlonkPublicInputCount } from "./limits.js";
 
 export function calldataToTupleItems(calldata) {
   return calldata.map((item) => {
@@ -31,12 +32,18 @@ async function exportPlonkCalldataWithPublicInputs(
 ) {
   let proof = unstringifyBigInts(_proof);
   const pub = unstringifyBigInts(_pub);
+  if (!Array.isArray(pub)) {
+    throw new Error("public inputs must be an array.");
+  }
+  assertPlonkPublicInputCount(pub.length, "public inputs");
 
   const curve = await getCurveFromName(proof.curve);
-  proof = fromObjectProof(curve, proof);
-
-  if (typeof curve.terminate === "function") {
-    await curve.terminate();
+  try {
+    proof = fromObjectProof(curve, proof);
+  } finally {
+    if (typeof curve.terminate === "function") {
+      await curve.terminate();
+    }
   }
 
   const hexToCell = (hex) =>

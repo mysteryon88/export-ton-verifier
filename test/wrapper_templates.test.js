@@ -79,6 +79,41 @@ test("import-wrapper defaults PLONK wrapper selection to the Tolk PLONK wrapper"
   });
 });
 
+test("import-wrapper accepts protocol flags before the destination path", async () => {
+  await withTempDir(async (tempDir) => {
+    const destPath = path.join(tempDir, "Verifier.ts");
+
+    execFileSync(
+      process.execPath,
+      [cliPath, "import-wrapper", "--groth16", destPath, "--force"],
+      { cwd: repoRoot, stdio: "pipe" },
+    );
+
+    const [copied, expected] = await Promise.all([
+      fs.readFile(destPath, "utf8"),
+      readTemplate("Verifier_tolk_groth16.ts"),
+    ]);
+
+    assert.equal(copied, expected);
+  });
+});
+
+test("import-wrapper treats trailing slash destinations as directories", async () => {
+  await withTempDir(async (tempDir) => {
+    const destDir = path.join(tempDir, "wrappers");
+    importWrapper(`${destDir}${path.sep}`, ["--groth16"]);
+
+    const [copied, expected] = await Promise.all([
+      fs.readFile(path.join(destDir, "Verifier.ts"), "utf8"),
+      readTemplate("Verifier_tolk_groth16.ts"),
+    ]);
+    const stat = await fs.stat(destDir);
+
+    assert.equal(copied, expected);
+    assert.equal(stat.isDirectory(), true);
+  });
+});
+
 test("import-wrapper copies the Func-specific PLONK wrapper for Func", async () => {
   await withTempDir(async (tempDir) => {
     const destPath = path.join(tempDir, "plonk-func.ts");

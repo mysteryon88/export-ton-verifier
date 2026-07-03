@@ -191,6 +191,16 @@ test("Tolk PLONK wrapper builds VerifyProofMessage with array<uint256> public in
   assert.equal(decoded.uncompressed.refs.length, 4);
 });
 
+test("Tolk PLONK wrapper rejects public inputs over transcript limit", async () => {
+  const { proofMessageToCell } = await loadTemplateModule("Verifier_tolk_plonk.ts");
+  const values = Array.from({ length: 245 }, (_, index) => BigInt(index));
+
+  assert.throws(
+    () => proofMessageToCell(makeTolkPlonkArgs(values)),
+    /at most 244 public inputs/,
+  );
+});
+
 test("Tolk PLONK sendVerify sends the contract-compatible proof message", async () => {
   const { Verifier } = await loadTemplateModule("Verifier_tolk_plonk.ts");
   const verifier = Verifier.createFromAddress(

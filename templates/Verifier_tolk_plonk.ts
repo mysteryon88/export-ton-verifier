@@ -15,6 +15,7 @@ export type VerifierConfig = {};
 const VERIFY_PROOF_OP = 0x76524659;
 const PUBLIC_INPUTS_ARG_INDEX = 15;
 const UINT256_ARRAY_CHUNK_SIZE = 3;
+const MAX_PLONK_PUBLIC_INPUTS = 244;
 
 export function verifierConfigToCell(config: VerifierConfig): Cell {
   return beginCell().endCell();
@@ -55,8 +56,10 @@ function requirePublicInputTuple(args: TupleItem[]): bigint[] {
 }
 
 function uint256ArrayToCell(values: bigint[]): Cell {
-  if (values.length > 255) {
-    throw new Error(`Expected at most 255 public inputs, got ${values.length}`);
+  if (values.length > MAX_PLONK_PUBLIC_INPUTS) {
+    throw new Error(
+      `Expected at most ${MAX_PLONK_PUBLIC_INPUTS} public inputs, got ${values.length}`,
+    );
   }
 
   const chunks: bigint[][] = [];

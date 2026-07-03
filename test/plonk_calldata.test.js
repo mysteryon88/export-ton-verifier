@@ -5,6 +5,7 @@ import {
   exportPlonkFuncCalldata,
   exportPlonkTolkCalldata,
 } from "../src/export_plonk_calldata.js";
+import { groth16CompressProof } from "../src/groth16CompressProof.js";
 import { getCurveFromName } from "../src/utils.js";
 
 const { stringifyBigInts } = utils;
@@ -51,5 +52,20 @@ test("PLONK calldata helpers expose Func dict-cell and Tolk tuple public inputs"
   assert.deepEqual(
     tolkCalldata[15].items.map((item) => item.value),
     [7n, 8n, 9n],
+  );
+});
+
+test("groth16CompressProof rejects non-BLS proof metadata before compression", async () => {
+  await assert.rejects(
+    groth16CompressProof(
+      {
+        curve: "bn128",
+        pi_a: ["0", "0", "1"],
+        pi_b: [["0", "0"], ["0", "0"], ["1", "0"]],
+        pi_c: ["0", "0", "1"],
+      },
+      [],
+    ),
+    /BLS12-381/,
   );
 });

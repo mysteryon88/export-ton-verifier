@@ -24,15 +24,15 @@ async function withTempDir(run) {
   }
 }
 
-async function writeGroth16JsonVk(filePath, nPublic = 2) {
-  const curve = await getCurveFromName("bn128");
+async function writeGroth16JsonVk(filePath, nPublic = 2, curveName = "bls12381") {
+  const curve = await getCurveFromName(curveName);
 
   try {
     const g1 = curve.G1.toObject(curve.G1.g);
     const g2 = curve.G2.toObject(curve.G2.g);
     const vk = stringifyBigInts({
       protocol: "groth16",
-      curve: "bn128",
+      curve: curveName,
       vk_alpha_1: g1,
       vk_beta_2: g2,
       vk_gamma_2: g2,
@@ -85,8 +85,9 @@ test("generateVerifier renders the Tolk Groth16 template by default for JSON inp
     await writeGroth16JsonVk(inputPath, 2);
 
     const originalLog = console.log;
+    const logs = [];
     let protocol;
-    console.log = () => {};
+    console.log = (message) => logs.push(String(message));
 
     try {
       protocol = await generateVerifier(inputPath, outputPath, {
@@ -99,6 +100,7 @@ test("generateVerifier renders the Tolk Groth16 template by default for JSON inp
     const rendered = await fs.readFile(outputPath, "utf8");
 
     assert.equal(protocol, "groth16");
+    assert.deepEqual(logs, []);
     assert.match(rendered, /const IC0: slice/);
     assert.match(rendered, /struct \(0x3b3cca17\) Verify \{/);
     assert.match(rendered, /pubInputs: RemainingBitsAndRefs/);
@@ -107,6 +109,46 @@ test("generateVerifier renders the Tolk Groth16 template by default for JSON inp
     assert.match(rendered, /get fun verify\(piA: slice, piB: slice, piC: slice, pubInputs: array<int>\): bool/);
     assert.doesNotMatch(rendered, /struct MyVerifier \{/);
     assert.doesNotMatch(rendered, /get fun verify_/);
+  });
+});
+
+test("generateVerifier rejects non-BLS Groth16 inputs before rendering TON templates", async () => {
+  await withTempDir(async (tempDir) => {
+    const inputPath = path.join(tempDir, "verification_key.json");
+    const outputPath = path.join(tempDir, "verifier.tolk");
+
+    await writeGroth16JsonVk(inputPath, 2, "bn128");
+
+    const originalLog = console.log;
+    console.log = () => {};
+    try {
+      await assert.rejects(
+        generateVerifier(inputPath, outputPath, { templatesDir }),
+        /BLS12-381/,
+      );
+    } finally {
+      console.log = originalLog;
+    }
+  });
+});
+
+test("generateVerifier emits progress through a custom logger when requested", async () => {
+  await withTempDir(async (tempDir) => {
+    const inputPath = path.join(tempDir, "verification_key.json");
+    const outputPath = path.join(tempDir, "verifier.tolk");
+    const logs = [];
+
+    await writeGroth16JsonVk(inputPath, 2);
+
+    const protocol = await generateVerifier(inputPath, outputPath, {
+      templatesDir,
+      logger: (message) => logs.push(message),
+    });
+
+    assert.equal(protocol, "groth16");
+    assert.ok(logs.includes("Using template for: tolk groth16"));
+    assert.ok(logs.includes("Compressing points..."));
+    assert.ok(logs.includes("Done."));
   });
 });
 

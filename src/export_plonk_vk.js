@@ -24,6 +24,7 @@ import { utils } from "ffjavascript";
 
 import { readHeaderPlonk } from "./helpers.js";
 import { getCurveFromName } from "./utils.js";
+import { assertPlonkPublicInputCount } from "./limits.js";
 
 const { stringifyBigInts, unstringifyBigInts } = utils;
 
@@ -33,13 +34,12 @@ const G1_UC_KEYS = ["Qm_uc", "Ql_uc", "Qr_uc", "Qo_uc", "Qc_uc", "S1_uc", "S2_uc
 export default async function zkeyExportPlonkVerificationKey(zkeyName) {
   const { fd, sections } = await binFileUtils.readBinFile(zkeyName, "zkey", 2);
 
-  const zkey = await readHeaderPlonk(fd, sections);
-
-  const res = await plonkVk(zkey);
-
-  await fd.close();
-
-  return res;
+  try {
+    const zkey = await readHeaderPlonk(fd, sections);
+    return await plonkVk(zkey);
+  } finally {
+    await fd.close();
+  }
 }
 
 export async function normalizePlonkVerificationKey(vkRaw) {
@@ -47,8 +47,11 @@ export async function normalizePlonkVerificationKey(vkRaw) {
     throw new Error(`Expected PLONK verification key (got '${vkRaw.protocol}').`);
   }
 
+  const nPublic = numberField(vkRaw, "nPublic");
+  assertPlonkPublicInputCount(nPublic, "verification_key.nPublic");
+
   if (isTemplateReadyPlonkVerificationKey(vkRaw)) {
-    return stringifyBigInts(vkRaw);
+    return stringifyBigInts({ ...vkRaw, nPublic });
   }
 
   const vk = unstringifyBigInts(vkRaw);
@@ -58,7 +61,7 @@ export async function normalizePlonkVerificationKey(vkRaw) {
     const res = {
       protocol: "plonk",
       curve: curve.name,
-      nPublic: numberField(vkRaw, "nPublic"),
+      nPublic,
       power: numberField(vkRaw, "power"),
       k1: scalarToString(curve, vk.k1, "k1"),
       k2: scalarToString(curve, vk.k2, "k2"),
@@ -144,43 +147,46 @@ function pointToUncompressedHex(curve, p) {
 async function plonkVk(zkey) {
   const curve = zkey.curve;
 
-  let vKey = {
-    protocol: zkey.protocol,
-    curve: curve.name,
-    nPublic: zkey.nPublic,
-    power: zkey.power,
+  try {
+    assertPlonkPublicInputCount(zkey.nPublic, "verification_key.nPublic");
 
-    k1: curve.Fr.toObject(zkey.k1),
-    k2: curve.Fr.toObject(zkey.k2),
+    let vKey = {
+      protocol: zkey.protocol,
+      curve: curve.name,
+      nPublic: zkey.nPublic,
+      power: zkey.power,
 
-    Qm: pointToBlstCHex(curve.G1, zkey.Qm),
-    Ql: pointToBlstCHex(curve.G1, zkey.Ql),
-    Qr: pointToBlstCHex(curve.G1, zkey.Qr),
-    Qo: pointToBlstCHex(curve.G1, zkey.Qo),
-    Qc: pointToBlstCHex(curve.G1, zkey.Qc),
-    S1: pointToBlstCHex(curve.G1, zkey.S1),
-    S2: pointToBlstCHex(curve.G1, zkey.S2),
-    S3: pointToBlstCHex(curve.G1, zkey.S3),
+      k1: curve.Fr.toObject(zkey.k1),
+      k2: curve.Fr.toObject(zkey.k2),
 
-    Qm_uc: pointToUncompressedHex(curve.G1, zkey.Qm),
-    Ql_uc: pointToUncompressedHex(curve.G1, zkey.Ql),
-    Qr_uc: pointToUncompressedHex(curve.G1, zkey.Qr),
-    Qo_uc: pointToUncompressedHex(curve.G1, zkey.Qo),
-    Qc_uc: pointToUncompressedHex(curve.G1, zkey.Qc),
-    S1_uc: pointToUncompressedHex(curve.G1, zkey.S1),
-    S2_uc: pointToUncompressedHex(curve.G1, zkey.S2),
-    S3_uc: pointToUncompressedHex(curve.G1, zkey.S3),
+      Qm: pointToBlstCHex(curve.G1, zkey.Qm),
+      Ql: pointToBlstCHex(curve.G1, zkey.Ql),
+      Qr: pointToBlstCHex(curve.G1, zkey.Qr),
+      Qo: pointToBlstCHex(curve.G1, zkey.Qo),
+      Qc: pointToBlstCHex(curve.G1, zkey.Qc),
+      S1: pointToBlstCHex(curve.G1, zkey.S1),
+      S2: pointToBlstCHex(curve.G1, zkey.S2),
+      S3: pointToBlstCHex(curve.G1, zkey.S3),
 
-    X_2: pointToBlstCHex(curve.G2, zkey.X_2),
+      Qm_uc: pointToUncompressedHex(curve.G1, zkey.Qm),
+      Ql_uc: pointToUncompressedHex(curve.G1, zkey.Ql),
+      Qr_uc: pointToUncompressedHex(curve.G1, zkey.Qr),
+      Qo_uc: pointToUncompressedHex(curve.G1, zkey.Qo),
+      Qc_uc: pointToUncompressedHex(curve.G1, zkey.Qc),
+      S1_uc: pointToUncompressedHex(curve.G1, zkey.S1),
+      S2_uc: pointToUncompressedHex(curve.G1, zkey.S2),
+      S3_uc: pointToUncompressedHex(curve.G1, zkey.S3),
 
-    w: curve.Fr.toObject(curve.Fr.w[zkey.power]),
-  };
+      X_2: pointToBlstCHex(curve.G2, zkey.X_2),
 
-  vKey = stringifyBigInts(vKey);
+      w: curve.Fr.toObject(curve.Fr.w[zkey.power]),
+    };
 
-  if (typeof curve.terminate === "function") {
-    await curve.terminate();
+    vKey = stringifyBigInts(vKey);
+    return vKey;
+  } finally {
+    if (typeof curve.terminate === "function") {
+      await curve.terminate();
+    }
   }
-
-  return vKey;
 }

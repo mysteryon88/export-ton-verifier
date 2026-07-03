@@ -6,7 +6,14 @@ export default defineConfig([
     format: ["esm", "cjs"],
     outDir: "dist",
     clean: true,
-    dts: true,
+    dts: {
+      compilerOptions: {
+        allowJs: true,
+        checkJs: false,
+        ignoreDeprecations: "6.0",
+        noImplicitAny: false,
+      },
+    },
   },
   {
     entry: [
@@ -15,6 +22,10 @@ export default defineConfig([
       "src/export_plonk_vk.js",
       "src/export_plonk_calldata.js",
       "src/export_plonk_func_calldata.js",
+      "src/artifactInfo.js",
+      "src/proofMessages.js",
+      "src/limits.js",
+      "src/templateResolver.js",
       "src/helpers.js",
       "src/curves.js",
       "src/utils.js",
