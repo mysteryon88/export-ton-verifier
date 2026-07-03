@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 export function createLogger({ logger = null, quiet = false } = {}) {
   if (quiet || logger === false || logger == null) {
     return { log() {} };

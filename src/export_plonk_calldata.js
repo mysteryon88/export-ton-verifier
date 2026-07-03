@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 import { getCurveFromName } from "./curves.js";
 import { utils } from "ffjavascript";
 const { unstringifyBigInts } = utils;

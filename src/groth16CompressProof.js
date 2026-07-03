@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 import { buildBls12381, utils } from "ffjavascript";
 import { g1Compressed, g2Compressed } from "./utils.js";
 import { assertTonBlsCurve } from "./limits.js";

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 import { Dictionary } from "@ton/core";
 
 export function dictFromInputList(list: bigint[]): Dictionary<number, bigint> {

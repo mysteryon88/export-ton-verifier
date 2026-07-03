@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// SPDX-License-Identifier: GPL-3.0-or-later
 import path from "path";
 import { fileURLToPath } from "url";
 import { runCli } from "./cli/commands.js";

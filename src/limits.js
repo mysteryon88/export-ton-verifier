@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 export function normalizeTonBlsCurveName(raw, field = "curve") {
   if (typeof raw !== "string" || raw.trim() === "") {
     throw new Error(`${field}: BLS12-381 curve metadata is required.`);

@@ -40,7 +40,7 @@ async function withBn128Fixtures(run) {
   try {
     const g1 = curve.G1.toObject(curve.G1.g);
     const g2 = curve.G2.toObject(curve.G2.g);
-    return await run({ g1, g2 });
+    return await run({ curve, g1, g2 });
   } finally {
     await curve.terminate();
   }
@@ -186,6 +186,13 @@ test("generateVerifier rejects gnark JSON points that are not on BLS12-381", asy
         /BLS12-381/,
       );
     });
+  });
+});
+
+test("compression helpers reject non-BLS12-381 curves", async () => {
+  await withBn128Fixtures(async ({ curve, g1, g2 }) => {
+    assert.throws(() => g1Compressed(curve, g1), /BLS12-381/);
+    assert.throws(() => g2Compressed(curve, g2), /BLS12-381/);
   });
 });
 

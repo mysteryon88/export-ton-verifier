@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 import fs from "fs/promises";
 import path from "path";
 import * as binFileUtils from "@iden3/binfileutils";

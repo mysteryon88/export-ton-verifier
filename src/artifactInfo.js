@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 import path from "path";
 import { resolveTemplatePath } from "./helpers.js";
 import { loadVerificationKey } from "./formats/index.js";

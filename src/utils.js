@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 import { buildBn128, buildBls12381 } from "ffjavascript";
 
 // from node_modules/snarkjs/src/curves.js
@@ -28,7 +29,17 @@ function toHexString(byteArray) {
   ).join("");
 }
 
+function assertBls12381Curve(curve) {
+  const normalizedName = String(curve?.name ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+  if (normalizedName !== "bls12381") {
+    throw new Error("Compression helpers support only BLS12-381 curves.");
+  }
+}
+
 export function g1Compressed(curve, p1Raw) {
+  assertBls12381Curve(curve);
   const p1 = curve.G1.fromObject(p1Raw);
   const buff = new Uint8Array(48);
   curve.G1.toRprCompressed(buff, 0, p1);
@@ -38,6 +49,7 @@ export function g1Compressed(curve, p1Raw) {
 }
 
 export function g2Compressed(curve, p2Raw) {
+  assertBls12381Curve(curve);
   const p2 = curve.G2.fromObject(p2Raw);
   const buff = new Uint8Array(96);
   curve.G2.toRprCompressed(buff, 0, p2);

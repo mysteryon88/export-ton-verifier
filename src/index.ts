@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 import type { Cell, Dictionary, TupleItem } from "@ton/core";
 import { dictFromInputList as dictFromInputListImpl } from "./dictFromInputList";
 import { groth16CompressProof as groth16CompressProofImpl } from "./groth16CompressProof.js";

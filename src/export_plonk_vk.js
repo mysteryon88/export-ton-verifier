@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // https://github.com/ton-circom-integration/snarkjs/blob/master/src/zkey_export_blst_verificationkey.js
 
 /*

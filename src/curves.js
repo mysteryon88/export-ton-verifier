@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 import { buildBls12381, Scalar } from "ffjavascript";
 
 const bls12381q = Scalar.e(

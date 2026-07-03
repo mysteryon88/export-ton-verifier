@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 import {
   BinaryReader,
   BLS12381_CURVE_NAME,

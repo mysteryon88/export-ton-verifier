@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 export const HELP_TEXT = `
 Usage:
   export-ton-verifier <inputPath> <outputPath> [--func | --tolk | --tact] [--contract-name <name>] [--wrapper-dest <destPath>] [--groth16 | --plonk] [--force]

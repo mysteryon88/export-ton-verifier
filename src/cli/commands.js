@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 import fsp from "fs/promises";
 import path from "path";
 import { generateVerifier } from "../generateVerifiers.js";

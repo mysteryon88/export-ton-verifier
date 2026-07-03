@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 import { beginCell, Cell, Dictionary } from "@ton/core";
 import { groth16CompressProof } from "./groth16CompressProof.js";
 import {

@@ -91,6 +91,12 @@ npx export-ton-verifier import-wrapper ./wrappers/Verifier_tolk_plonk.ts --plonk
 npx export-ton-verifier import-wrapper ./wrappers/Verifier_func_plonk.ts --plonk --func --force
 ```
 
+## License
+
+GNU GPL v3.0 or later.
+
+This package depends on and includes code derived from **snarkJS**, which is licensed under GPL-3.0.
+
 ## References
 
 - [TON Documentation](https://docs.ton.org/contract-dev/zero-knowledge)
