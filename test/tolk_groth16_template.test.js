@@ -43,7 +43,7 @@ test("renders flat public input handling for small Groth16 circuits when contrac
   assert.match(rendered, /if \(pubInputs\.size\(\) != N_PUBLIC\)/);
   assert.match(rendered, /pubInputs\.get\(0\)/);
   assert.match(rendered, /pubInputs\.get\(1\)/);
-  assert.match(rendered, /enum VerifierErrors \{\s*InvalidInputs = 258,\s*WrongProof = 260,\s*\}/);
+  assert.match(rendered, /enum VerifierErrors \{\s*InvalidInputs = 258,\s*WrongProof = 260,\s*NotEnoughValue = 261,\s*\}/);
   assert.match(rendered, /fun blsG1Multiexp2/);
   assert.match(rendered, /# Safety/);
   assert.match(rendered, /\.hexToSlice\(\)/);
@@ -99,7 +99,10 @@ test("renders struct mode with underscored getter when contractName is provided"
   assert.match(rendered, /fun MyVerifier\.verify\(self, piA: slice, piB: slice, piC: slice, pubInputs: array<int>\): bool/);
   assert.match(rendered, /fun MyVerifier\.verifyProof\(self, msg: MyVerifierVerify\): bool/);
   assert.match(rendered, /struct \(0x3b3cca17\) MyVerifierVerify \{/);
-  assert.match(rendered, /enum MyVerifierErrors \{\s*InvalidInputs = 258,\s*WrongProof = 260,\s*\}/);
+  assert.match(rendered, /enum MyVerifierErrors \{\s*InvalidInputs = 258,\s*WrongProof = 260,\s*NotEnoughValue = 261,\s*\}/);
+  assert.match(rendered, /const MyVerifierMinVerifyValue: coins = 50000000/);
+  assert.match(rendered, /inMsg\.valueCoins >= MyVerifierMinVerifyValue/);
+  assert.doesNotMatch(rendered, /const MIN_VERIFY_VALUE: coins/);
   assert.match(rendered, /throw MyVerifierErrors\.InvalidInputs;/);
   assert.match(rendered, /assert \(MyVerifier\.create\(\)\.verifyProof\(msg\)\) throw MyVerifierErrors\.WrongProof;/);
   assert.match(rendered, /assert \(inMsg\.body\.isEmpty\(\)\) throw MyVerifierErrors\.InvalidInputs;/);
@@ -125,8 +128,8 @@ test("renders runtime batches with inline IC selector for struct mode circuits w
   assert.match(rendered, /MyVerifier\.blsG1Multiexp7/);
   assert.match(rendered, /MyVerifier\.blsG1Multiexp2/);
   assert.match(rendered, /self\.ic\(done \+ 1\), y1/);
-  assert.match(rendered, /self\.ic\(done \+ 1\), pubInputs\.get\(done\)/);
-  assert.match(rendered, /pubInputs\.get\(done \+ 1\)/);
+  assert.match(rendered, /self\.ic\(done \+ 1\), MyVerifier\.checkPublicInput\(pubInputs\.get\(done\)\)/);
+  assert.match(rendered, /MyVerifier\.checkPublicInput\(pubInputs\.get\(done \+ 1\)\)/);
   assert.match(rendered, /pubInputs: RemainingBitsAndRefs/);
   assert.match(rendered, /MyVerifierVerify\.fromSlice/);
   assert.match(rendered, /get fun verify_MyVerifier\(/);

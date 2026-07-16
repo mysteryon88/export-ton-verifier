@@ -145,6 +145,32 @@ function storePair(first, second) {
 }
 
 function plonkTolkMessageFromCalldata(args) {
+  const { compressed, evaluations, uncompressed } = plonkProofCells(args);
+  const publicInputs = uint256ArrayToCell(requirePublicInputTuple(args));
+  const payload = beginCell()
+    .storeRef(compressed)
+    .storeRef(evaluations)
+    .storeSlice(publicInputs.beginParse())
+    .storeRef(uncompressed)
+    .endCell();
+
+  return beginCell().storeUint(PLONK_VERIFY_PROOF_OP, 32).storeRef(payload).endCell();
+}
+
+function plonkFuncMessageFromCalldata(args) {
+  const { compressed, evaluations, uncompressed } = plonkProofCells(args);
+  const publicInputs = requireTupleCell(args, 15, "cell");
+  const payload = beginCell()
+    .storeRef(compressed)
+    .storeRef(evaluations)
+    .storeRef(publicInputs)
+    .storeRef(uncompressed)
+    .endCell();
+
+  return beginCell().storeUint(PLONK_VERIFY_PROOF_OP, 32).storeRef(payload).endCell();
+}
+
+function plonkProofCells(args) {
   const a = requireTupleCell(args, 0);
   const b = requireTupleCell(args, 1);
   const c = requireTupleCell(args, 2);
@@ -154,7 +180,6 @@ function plonkTolkMessageFromCalldata(args) {
   const t3 = requireTupleCell(args, 6);
   const wxi = requireTupleCell(args, 13);
   const wxiw = requireTupleCell(args, 14);
-  const publicInputs = uint256ArrayToCell(requirePublicInputTuple(args));
   const aUc = requireTupleCell(args, 16);
   const bUc = requireTupleCell(args, 17);
   const cUc = requireTupleCell(args, 18);
@@ -209,21 +234,13 @@ function plonkTolkMessageFromCalldata(args) {
     .storeRef(uncompressedTail)
     .endCell();
 
-  const payload = beginCell()
-    .storeRef(compressed)
-    .storeRef(evaluations)
-    .storeSlice(publicInputs.beginParse())
-    .storeRef(uncompressed)
-    .endCell();
-
-  return beginCell().storeUint(PLONK_VERIFY_PROOF_OP, 32).storeRef(payload).endCell();
+  return { compressed, evaluations, uncompressed };
 }
 
 async function plonkMessageCell(proof, publicSignals, lang) {
   if (lang === "func") {
-    await exportPlonkFuncCalldata(proof, publicSignals);
-    throw new Error(
-      "PLONK FunC verifier template does not define an internal message receiver.",
+    return plonkFuncMessageFromCalldata(
+      await exportPlonkFuncCalldata(proof, publicSignals),
     );
   }
 

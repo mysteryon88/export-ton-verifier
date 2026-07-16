@@ -1,5 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { buildBn128, buildBls12381 } from "ffjavascript";
+import { buildBn128, buildBls12381, Scalar } from "ffjavascript";
+
+const bls12381q = Scalar.e(
+  "1a0111ea397fe69a4b1ba7b6434bacd764774b84f38512bf6730d2a0f6b0f6241eabfffeb153ffffb9feffffffffaaab",
+  16,
+);
 
 // from node_modules/snarkjs/src/curves.js
 export async function getCurveFromName(name, options) {
@@ -21,6 +26,13 @@ export async function getCurveFromName(name, options) {
       .match(/[A-Za-z0-9]+/g)
       .join("");
   }
+}
+
+export async function getCurveFromQ(q) {
+  if (Scalar.eq(q, bls12381q)) {
+    return buildBls12381();
+  }
+  throw new Error(`Curve not supported: ${Scalar.toString(q)}`);
 }
 
 function toHexString(byteArray) {

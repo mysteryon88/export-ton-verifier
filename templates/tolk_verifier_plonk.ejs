@@ -15,6 +15,7 @@ const errScalarNotInField = `${errorsName}.ScalarNotInField`;
 const errTooManyPublics = `${errorsName}.TooManyPublics`;
 const errInvalidMessage = `${errorsName}.InvalidMessage`;
 const errInvalidProof = `${errorsName}.InvalidProof`;
+const errNotEnoughValue = `${errorsName}.NotEnoughValue`;
 
 const xinSquares = Array.from(
   { length: powerValue },
@@ -157,6 +158,7 @@ const W1: int = <%= w %>
 const N_PUBLIC: int = <%= publicCount %>
 const DOMAIN_SIZE: int = <%= domainSize %>
 const N_LAGRANGE: int = <%= nLagrange %>
+const MIN_VERIFY_VALUE: coins = 50000000
 
 const BLS_G1: slice = "97f1d3a73197d7942695638c4fa9ac0fc3688c4f9774b905a14e3a3f171bac586c55e83ff97a1aeffb3af00adb22c6bb".hexToSlice()
 const BLS_G2: slice = "93e02b6052719f607dacd3a088274f65596bd0d09920b61ab5da61bbdc7f5049334cf11213945d57e5ac7d055d042b7e024aa2b2f08f0a91260805272dc51051c6e47ad4fa403b02b4510b647ae3d1770bac0326a805bbefd48056c8c121bdb8".hexToSlice()
@@ -168,6 +170,7 @@ enum <%= errorsName %> {
   TooManyPublics = 104,
   InvalidMessage = 105,
   InvalidProof = 106,
+  NotEnoughValue = 107,
 }
 
 /// # Safety
@@ -353,6 +356,7 @@ fun verifyFromPayload(payload: VerifyProofPayload): bool {
 
 fun onInternalMessage(inMsg: InMessage) {
   if (!inMsg.body.isEmpty()) {
+    assert (inMsg.valueCoins >= MIN_VERIFY_VALUE) throw <%= errNotEnoughValue %>;
     val msg = VerifyProofMessage.fromSlice(inMsg.body, { throwIfOpcodeDoesNotMatch: <%= errInvalidMessage %> });
     assert (verifyFromPayload(msg.proof.load())) throw <%= errInvalidProof %>;
   }

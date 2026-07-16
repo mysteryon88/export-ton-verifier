@@ -10,6 +10,10 @@ const errorsName = `${publicContractName}Errors`;
 const errInvalidInputs = `${errorsName}.InvalidInputs`;
 const errIndexOutOfRange = `${errorsName}.IndexOutOfRange`;
 const errWrongProof = `${errorsName}.WrongProof`;
+const errNotEnoughValue = `${errorsName}.NotEnoughValue`;
+const minVerifyValueName = hasStruct
+  ? `${verifierName}MinVerifyValue`
+  : "MIN_VERIFY_VALUE";
 
 let sizes = [];
 
@@ -72,6 +76,10 @@ const vkBetaExpr = hasStruct ? "self.vkBeta2" : "VK_BETA_2";
 const addCall = hasStruct ? `${verifierName}.blsG1Add` : "blsG1Add";
 const negCall = hasStruct ? `${verifierName}.blsG1Neg` : "blsG1Neg";
 const pairingCall = hasStruct ? `${verifierName}.blsPairing` : "blsPairing";
+const blsRCall = hasStruct ? `${verifierName}.blsR()` : "blsR()";
+const checkPublicInputCall = hasStruct
+  ? `${verifierName}.checkPublicInput`
+  : "checkPublicInput";
 const loadNextPubInputCall = hasStruct
   ? `${verifierName}.loadNextPubInput(mutate payload)`
   : "loadNextPubInput(mutate payload)";
@@ -134,7 +142,8 @@ function renderDirectPayloadBatchArgs(count, indent) {
 function renderDirectArrayBatchArgs(count, indent) {
   return Array.from(
     { length: count },
-    (_, i) => `${indent}${directPoint(i + 1)}, pubInputs.get(${i})`,
+    (_, i) =>
+      `${indent}${directPoint(i + 1)}, ${checkPublicInputCall}(pubInputs.get(${i}))`,
   ).join(",\n");
 }
 
@@ -149,7 +158,7 @@ function renderRuntimeArrayBatchArgs(count, indent) {
   return Array.from(
     { length: count },
     (_, i) =>
-      `${indent}${runtimePoint(`done + ${i + 1}`)}, pubInputs.get(${addExpr("done", i)})`,
+      `${indent}${runtimePoint(`done + ${i + 1}`)}, ${checkPublicInputCall}(pubInputs.get(${addExpr("done", i)}))`,
   ).join(",\n");
 }
 
@@ -323,12 +332,15 @@ const VK_BETA_2:  slice = "<%= vk_beta_2 %>".hexToSlice()
 const N_PUBLIC: int = <%= nPublic %>
 <% } -%>
 
+const <%= minVerifyValueName %>: coins = 50000000
+
 enum <%= errorsName %> {
   InvalidInputs = 258,
 <% if (nPublic > 7) { -%>
   IndexOutOfRange = 259,
 <% } -%>
   WrongProof = 260,
+  NotEnoughValue = 261,
 }
 
 <% if (hasStruct) { -%>
@@ -348,6 +360,17 @@ fun <%= verifierName %>.create(): <%= verifierName %> {
 /// Expects the slice to contain a canonically encoded BLS12-381 G1 point
 /// accepted by the TVM `BLS_G1_NEG` opcode.
 @pure fun <%= hasStruct ? `${verifierName}.blsG1Neg` : "blsG1Neg" %>(x: slice): slice asm "BLS_G1_NEG";
+
+<% if (nPublic > 0) { -%>
+@pure fun <%= hasStruct ? `${verifierName}.blsR` : "blsR" %>(): int asm "BLS_PUSHR";
+
+fun <%= hasStruct ? `${verifierName}.checkPublicInput` : "checkPublicInput" %>(x: int): int {
+  if (x < 0 || x >= <%= blsRCall %>) {
+    throw <%= errInvalidInputs %>;
+  }
+  return x;
+}
+<% } -%>
 
 /// # Safety
 /// Expects the provided slices to contain canonically encoded BLS12-381 proof
@@ -383,7 +406,7 @@ fun <%= hasStruct ? `${verifierName}.loadNextPubInput(mutate payload: slice)` : 
     }
     payload = payload.loadRef().beginParse();
   }
-  return payload.loadInt(257);
+  return <%= checkPublicInputCall %>(payload.loadInt(257));
 }
 
 fun <%= hasStruct ? `${verifierName}.finishGroth16` : "finishGroth16" %>(
@@ -483,6 +506,7 @@ fun onInternalMessage(inMsg: InMessage) {
 
   match (msg) {
     <%= verifyMessageName %> => {
+      assert (inMsg.valueCoins >= <%= minVerifyValueName %>) throw <%= errNotEnoughValue %>;
       assert (<%= verifyProofCall %>) throw <%= errWrongProof %>;
     }
     else => {

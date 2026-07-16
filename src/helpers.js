@@ -2,7 +2,7 @@
 import fs from "fs/promises";
 import path from "path";
 import * as binFileUtils from "@iden3/binfileutils";
-import { getCurveFromQ } from "./curves.js";
+import { getCurveFromQ } from "./utils.js";
 
 export async function fileExists(p) {
   try {

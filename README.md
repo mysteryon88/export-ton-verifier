@@ -42,6 +42,14 @@ import {
 `proofToMessageBoc` converts proof/public-signal JSON into a base64 or hex BOC internal message body for supported generated verifier templates.
 PLONK verifier generation supports at most `MAX_PLONK_PUBLIC_INPUTS` public inputs because the TVM Keccak transcript helper is limited to 255 tuple items.
 
+Generated Groth16 verifiers reject non-canonical public inputs outside the BLS12-381 scalar
+field. Verification keys are checked for valid BLS12-381 points and subgroup membership before
+generation; core Groth16 key points must also be non-identity.
+
+Internal proof-verification messages for generated FunC, Tolk, and Tact contracts must attach at
+least `0.05 TON`. Getters are unchanged. Both Tolk and FunC PLONK templates support internal
+verification messages through `proofToMessageBoc`.
+
 ## Usage CLI
 
 ```sh
@@ -79,6 +87,7 @@ npx export-ton-verifier doctor ./circuits/verification_key.json --json
 # Convert proof/public JSON into an internal message body BOC:
 npx export-ton-verifier proof-to-message ./circuits/proof.json ./circuits/public.json --groth16 --tolk
 npx export-ton-verifier proof-to-message ./circuits/proof.json ./circuits/public.json --plonk --tolk --format hex --output ./body.hex
+npx export-ton-verifier proof-to-message ./circuits/proof.json ./circuits/public.json --plonk --func
 
 # Only copy the TypeScript wrapper (protocol required; Tolk/default selection when language is omitted):
 npx export-ton-verifier import-wrapper ./wrappers/ --groth16 --force

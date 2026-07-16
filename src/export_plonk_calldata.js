@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import { getCurveFromName } from "./curves.js";
+import { getCurveFromName } from "./utils.js";
 import { utils } from "ffjavascript";
 const { unstringifyBigInts } = utils;
 import { beginCell, Cell, Dictionary } from "@ton/core";
-import { assertPlonkPublicInputCount } from "./limits.js";
+import {
+  assertPlonkPublicInputCount,
+  assertTonBlsCurve,
+} from "./limits.js";
 
 export function calldataToTupleItems(calldata) {
   return calldata.map((item) => {
@@ -37,6 +40,7 @@ async function exportPlonkCalldataWithPublicInputs(
     throw new Error("public inputs must be an array.");
   }
   assertPlonkPublicInputCount(pub.length, "public inputs");
+  assertTonBlsCurve(proof?.curve, "proof.curve");
 
   const curve = await getCurveFromName(proof.curve);
   try {

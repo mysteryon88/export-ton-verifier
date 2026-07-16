@@ -60,6 +60,8 @@ test("import-wrapper copies Func and Tolk Groth16 wrappers separately, with Tolk
     assert.match(tolkWrapper, /storeSlice\(pubInputs\.beginParse\(\)\)/);
     assert.match(tolkWrapper, /writeTuple\(this\.tupleFromInputList\(opts\.pubInputs\)\)/);
     assert.doesNotMatch(tolkWrapper, /\.storeDict\(/);
+    assert.doesNotMatch(funcWrapper, /queryID/);
+    assert.doesNotMatch(tolkWrapper, /queryID/);
 
     assert.equal(defaultWrapper, tolkWrapper);
   });
@@ -125,7 +127,8 @@ test("import-wrapper copies the Func-specific PLONK wrapper for Func", async () 
     ]);
 
     assert.equal(copied, expected);
-    assert.doesNotMatch(copied, /proofMessageToCell/);
+    assert.match(copied, /proofMessageToCell/);
+    assert.match(copied, /sendVerify/);
     assert.doesNotMatch(copied, /TupleBuilder/);
     assert.doesNotMatch(copied, /serializeUint256Array/);
   });
@@ -139,7 +142,8 @@ test("PLONK wrappers keep Func and Tolk public input layouts separate", async ()
 
   assert.match(funcWrapper, /getVerify\(provider: ContractProvider, args: TupleItem\[\]\)/);
   assert.doesNotMatch(funcWrapper, /Dictionary/);
-  assert.doesNotMatch(funcWrapper, /proofMessageToCell/);
+  assert.match(funcWrapper, /proofMessageToCell/);
+  assert.match(funcWrapper, /sendVerify/);
 
   assert.match(tolkWrapper, /proofMessageToCell/);
   assert.match(tolkWrapper, /requirePublicInputTuple/);

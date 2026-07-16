@@ -38,7 +38,7 @@ test("Func Groth16 template omits unused index-out-of-range errors", async () =>
   assert.match(withPublics, /public_not_present/);
   assert.doesNotMatch(withPublics, /int res = 0/);
   assert.match(withPublics, /return \(0 - \(a != 0\)\);/);
-  assert.match(withPublics, /\(\) recv_internal\(cell in_msg_full, slice in_msg_body\) impure/);
+  assert.match(withPublics, /\(\) recv_internal\(int msg_value, cell in_msg_full, slice in_msg_body\) impure/);
 });
 
 test("Tact Groth16 template omits unused error constants and helpers", async () => {

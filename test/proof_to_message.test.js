@@ -106,7 +106,7 @@ test("proofToMessageBoc rejects Groth16 proofs without curve metadata", async ()
   );
 });
 
-test("proofToMessageBoc builds PLONK Tolk internal messages and rejects PLONK FunC", async () => {
+test("proofToMessageBoc builds PLONK Tolk and FunC internal messages", async () => {
   const { proofToMessageBoc } = await import("../src/proofMessages.js");
   const { plonk, publicSignals } = await makeProofs();
 
@@ -116,17 +116,21 @@ test("proofToMessageBoc builds PLONK Tolk internal messages and rejects PLONK Fu
     protocol: "plonk",
     lang: "tolk",
   });
+  const func = await proofToMessageBoc({
+    proof: plonk,
+    publicSignals,
+    protocol: "plonk",
+    lang: "func",
+  });
 
   assert.equal(opcodeFromBase64(tolk), 0x76524659);
-  await assert.rejects(
-    proofToMessageBoc({
-      proof: plonk,
-      publicSignals,
-      protocol: "plonk",
-      lang: "func",
-    }),
-    /PLONK FunC.*internal message/,
-  );
+  assert.equal(opcodeFromBase64(func), 0x76524659);
+
+  const [cell] = Cell.fromBoc(Buffer.from(func, "base64"));
+  const root = cell.beginParse();
+  root.loadUint(32);
+  const payload = root.loadRef();
+  assert.equal(payload.refs.length, 4);
 });
 
 test("proof-to-message CLI writes encoded BOC output", async () => {

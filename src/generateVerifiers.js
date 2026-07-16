@@ -9,6 +9,9 @@ import { assertTonBlsCurve } from "./limits.js";
 import { defaultTemplatesDir } from "./templateResolver.js";
 import { createLogger } from "./logger.js";
 import {
+  assertBls12381Groth16VerificationKey,
+} from "./formats/common.js";
+import {
   loadPlonkTemplateVerificationKey,
   loadVerificationKey,
 } from "./formats/index.js";
@@ -57,6 +60,7 @@ export async function generateVerifier(
     if (vkRaw.protocol === "groth16") {
       const vk = unstringifyBigInts(vkRaw);
       curve = await getCurveFromName(vkRaw.curve);
+      assertBls12381Groth16VerificationKey(curve, vk);
 
       log.log("Compressing points...");
       const data = {

@@ -58,7 +58,7 @@ test("renders PLONK verifier as Tolk contract instead of FunC", async () => {
   assert.match(rendered, /struct VerifyProofPayload \{\s*compressed: Cell<CompressedProof>\s*evaluations: Cell<EvaluationValues>\s*publicInputs: ScalarArray\s*uncompressed: Cell<UncompressedProof>\s*\}/);
   assert.match(rendered, /struct CompressedProof \{\s*ab: Cell<CompressedPair>\s*cz: Cell<CompressedPair>\s*t12: Cell<CompressedPair>\s*tail: Cell<CompressedTail>\s*\}/);
   assert.match(rendered, /struct UncompressedProof \{\s*a: Cell<G1Uncompressed>\s*b: Cell<G1Uncompressed>\s*c: Cell<G1Uncompressed>\s*tail: Cell<UncompressedTail>\s*\}/);
-  assert.match(rendered, /enum VerifierErrors \{\s*PublicNotPresent = 101,\s*FailedInverse = 102,\s*ScalarNotInField = 103,\s*TooManyPublics = 104,\s*InvalidMessage = 105,\s*InvalidProof = 106,\s*\}/);
+  assert.match(rendered, /enum VerifierErrors \{\s*PublicNotPresent = 101,\s*FailedInverse = 102,\s*ScalarNotInField = 103,\s*TooManyPublics = 104,\s*InvalidMessage = 105,\s*InvalidProof = 106,\s*NotEnoughValue = 107,\s*\}/);
   assert.match(rendered, /const QM: slice = "[a-f0-9]+".hexToSlice\(\)/);
   assert.match(rendered, /@pure\s+fun blsPairing\(/);
   assert.match(rendered, /fun int\.scalarToSlice\(self\): slice/);

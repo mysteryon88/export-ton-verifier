@@ -121,13 +121,92 @@ export async function withBls12381(run) {
 }
 
 export function decodeBls12381G1(curve, bytes, field) {
-  const point = decodeBls12381Point(curve.G1, bytes, 48, field);
+  const point = decodeBls12381Point(curve.G1, curve.r, bytes, 48, field);
   return curvePointToObjectArray(curve.G1, point);
 }
 
 export function decodeBls12381G2(curve, bytes, field) {
-  const point = decodeBls12381Point(curve.G2, bytes, 96, field);
+  const point = decodeBls12381Point(curve.G2, curve.r, bytes, 96, field);
   return curvePointToObjectArray(curve.G2, point);
+}
+
+export function parseBls12381Point(
+  group,
+  scalarOrder,
+  raw,
+  field,
+  options,
+) {
+  let point;
+  try {
+    point = group.fromObject(bigintPoint(raw));
+  } catch (err) {
+    throw new Error(
+      `${field}: expected a valid BLS12-381 point (${err?.message || err}).`,
+    );
+  }
+  assertBls12381Point(group, scalarOrder, point, field, options);
+  return point;
+}
+
+export function assertBls12381Point(
+  group,
+  scalarOrder,
+  point,
+  field,
+  { allowIdentity = true } = {},
+) {
+  if (!group.isValid(point)) {
+    throw new Error(`${field}: point is not on BLS12-381.`);
+  }
+  if (group.isZero(point)) {
+    if (!allowIdentity) {
+      throw new Error(`${field}: identity point is not allowed.`);
+    }
+    return;
+  }
+  if (!group.isZero(group.timesScalar(point, scalarOrder))) {
+    throw new Error(`${field}: point is not in the BLS12-381 prime-order subgroup.`);
+  }
+}
+
+export function assertBls12381Groth16VerificationKey(curve, vk) {
+  parseBls12381Point(
+    curve.G1,
+    curve.r,
+    vk.vk_alpha_1,
+    "verification_key.vk_alpha_1",
+    { allowIdentity: false },
+  );
+  parseBls12381Point(
+    curve.G2,
+    curve.r,
+    vk.vk_beta_2,
+    "verification_key.vk_beta_2",
+    { allowIdentity: false },
+  );
+  parseBls12381Point(
+    curve.G2,
+    curve.r,
+    vk.vk_gamma_2,
+    "verification_key.vk_gamma_2",
+    { allowIdentity: false },
+  );
+  parseBls12381Point(
+    curve.G2,
+    curve.r,
+    vk.vk_delta_2,
+    "verification_key.vk_delta_2",
+    { allowIdentity: false },
+  );
+  vk.IC.forEach((point, idx) => {
+    parseBls12381Point(
+      curve.G1,
+      curve.r,
+      point,
+      `verification_key.IC[${idx}]`,
+    );
+  });
 }
 
 function curvePointToObjectArray(curveGroup, point) {
@@ -140,7 +219,13 @@ function stringifyBigIntsDeep(value) {
   return value;
 }
 
-function decodeBls12381Point(group, bytes, compressedSize, field) {
+function decodeBls12381Point(
+  group,
+  scalarOrder,
+  bytes,
+  compressedSize,
+  field,
+) {
   const first = bytes[0];
   if (first === undefined) {
     throw new Error(`${field}: empty point encoding.`);
@@ -162,8 +247,12 @@ function decodeBls12381Point(group, bytes, compressedSize, field) {
         `${field}: expected ${compressedSize} compressed bytes, got ${bytes.length}.`,
       );
     }
-    if (flag === 0xc0) return group.zero;
-    return group.fromRprCompressed(toFfjavascriptCompressed(bytes), 0);
+    const point =
+      flag === 0xc0
+        ? group.zero
+        : group.fromRprCompressed(toFfjavascriptCompressed(bytes), 0);
+    assertBls12381Point(group, scalarOrder, point, field);
+    return point;
   }
 
   if (bytes.length !== compressedSize * 2) {
@@ -171,8 +260,10 @@ function decodeBls12381Point(group, bytes, compressedSize, field) {
       `${field}: expected ${compressedSize * 2} uncompressed bytes, got ${bytes.length}.`,
     );
   }
-  if (flag === 0x40) return group.zero;
-  return group.fromRprUncompressed(bytes, 0);
+  const point =
+    flag === 0x40 ? group.zero : group.fromRprUncompressed(bytes, 0);
+  assertBls12381Point(group, scalarOrder, point, field);
+  return point;
 }
 
 function toFfjavascriptCompressed(bytes) {
@@ -181,6 +272,12 @@ function toFfjavascriptCompressed(bytes) {
   converted[0] &= 0x1f;
   if (sign) converted[0] |= 0x80;
   return converted;
+}
+
+function bigintPoint(value) {
+  if (Array.isArray(value)) return value.map(bigintPoint);
+  if (typeof value === "bigint") return value;
+  return BigInt(value);
 }
 
 export class BinaryReader {

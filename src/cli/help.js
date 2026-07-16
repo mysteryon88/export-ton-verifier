@@ -18,6 +18,8 @@ Notes:
   - Tolk is the default for Groth16 and PLONK verifier generation.
     Use --func to generate FunC output.
   - If language is Tact (--tact), wrapper copy is skipped even if --wrapper-dest is provided.
+  - Internal proof verification messages must attach at least 0.05 TON.
+  - Groth16 public inputs must be canonical BLS12-381 scalars.
 
 Arguments:
   inputPath       Path to .zkey, snarkjs verification_key.json, gnark JSON/.bin, or arkworks JSON
@@ -78,6 +80,7 @@ Examples:
   # Build internal message body BOC from proof/public JSON
   npx export-ton-verifier proof-to-message ./circuits/proof.json ./circuits/public.json --groth16 --tolk
   npx export-ton-verifier proof-to-message ./circuits/proof.json ./circuits/public.json --plonk --tolk --format hex --output ./body.hex
+  npx export-ton-verifier proof-to-message ./circuits/proof.json ./circuits/public.json --plonk --func
 
   # Copy the Tolk Groth16 wrapper (default wrapper language)
   npx export-ton-verifier import-wrapper ./wrappers/ --groth16 --force

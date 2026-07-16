@@ -53,7 +53,6 @@ export class Verifier implements Contract {
       pi_c: Buffer;
       pubInputs: bigint[];
       value: bigint;
-      queryID?: number;
     },
   ) {
     await provider.internal(via, {

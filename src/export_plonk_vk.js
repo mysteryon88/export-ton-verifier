@@ -25,7 +25,17 @@ import { utils } from "ffjavascript";
 
 import { readHeaderPlonk } from "./helpers.js";
 import { getCurveFromName } from "./utils.js";
-import { assertPlonkPublicInputCount } from "./limits.js";
+import {
+  assertPlonkPublicInputCount,
+  assertTonBlsCurve,
+} from "./limits.js";
+import {
+  assertBls12381Point,
+  decodeBls12381G1,
+  decodeBls12381G2,
+  decodeHex,
+  parseBls12381Point,
+} from "./formats/common.js";
 
 const { stringifyBigInts, unstringifyBigInts } = utils;
 
@@ -50,15 +60,24 @@ export async function normalizePlonkVerificationKey(vkRaw) {
 
   const nPublic = numberField(vkRaw, "nPublic");
   assertPlonkPublicInputCount(nPublic, "verification_key.nPublic");
-
-  if (isTemplateReadyPlonkVerificationKey(vkRaw)) {
-    return stringifyBigInts({ ...vkRaw, nPublic });
-  }
+  assertTonBlsCurve(vkRaw.curve, "verification_key.curve");
 
   const vk = unstringifyBigInts(vkRaw);
   const curve = await getCurveFromName(vkRaw.curve);
 
   try {
+    if (isTemplateReadyPlonkVerificationKey(vkRaw)) {
+      validateTemplateReadyPlonkVerificationKey(curve, vkRaw);
+      return stringifyBigInts({ ...vkRaw, nPublic });
+    }
+
+    const x2 = parseBls12381Point(
+      curve.G2,
+      curve.r,
+      vk.X_2,
+      "verification_key.X_2",
+      { allowIdentity: false },
+    );
     const res = {
       protocol: "plonk",
       curve: curve.name,
@@ -70,12 +89,18 @@ export async function normalizePlonkVerificationKey(vkRaw) {
         vk.w === undefined
           ? scalarToString(curve, curve.Fr.w[numberField(vkRaw, "power")], "w")
           : scalarToString(curve, vk.w, "w"),
-      X_2: pointObjectToBlstCHex(curve.G2, vk.X_2, "X_2"),
+      X_2: pointToBlstCHex(curve.G2, x2),
     };
 
     for (const key of G1_KEYS) {
-      res[key] = pointObjectToBlstCHex(curve.G1, vk[key], key);
-      res[`${key}_uc`] = pointObjectToUncompressedHex(curve.G1, vk[key], key);
+      const point = parseBls12381Point(
+        curve.G1,
+        curve.r,
+        vk[key],
+        `verification_key.${key}`,
+      );
+      res[key] = pointToBlstCHex(curve.G1, point);
+      res[`${key}_uc`] = pointToUncompressedHex(curve.G1, point);
     }
 
     return stringifyBigInts(res);
@@ -92,6 +117,41 @@ function isTemplateReadyPlonkVerificationKey(vkRaw) {
     G1_UC_KEYS.every((key) => typeof vkRaw[key] === "string") &&
     typeof vkRaw.X_2 === "string"
   );
+}
+
+function validateTemplateReadyPlonkVerificationKey(curve, vkRaw) {
+  for (const key of G1_KEYS) {
+    const compressed = curve.G1.fromObject(
+      decodeBls12381G1(
+        curve,
+        decodeHex(vkRaw[key], `verification_key.${key}`),
+        `verification_key.${key}`,
+      ),
+    );
+    const uncompressed = curve.G1.fromObject(
+      decodeBls12381G1(
+        curve,
+        decodeHex(vkRaw[`${key}_uc`], `verification_key.${key}_uc`),
+        `verification_key.${key}_uc`,
+      ),
+    );
+    if (!curve.G1.eq(compressed, uncompressed)) {
+      throw new Error(
+        `verification_key.${key}: compressed and uncompressed encodings must describe the same point.`,
+      );
+    }
+  }
+
+  const x2 = curve.G2.fromObject(
+    decodeBls12381G2(
+      curve,
+      decodeHex(vkRaw.X_2, "verification_key.X_2"),
+      "verification_key.X_2",
+    ),
+  );
+  assertBls12381Point(curve.G2, curve.r, x2, "verification_key.X_2", {
+    allowIdentity: false,
+  });
 }
 
 function numberField(vkRaw, key) {
@@ -116,13 +176,6 @@ function ffC2blstC(a, offset = 0) {
   a[offset] |= 0x80;
 }
 
-function pointObjectToBlstCHex(curve, p, key) {
-  if (p === undefined || p === null) {
-    throw new Error(`verification_key: missing '${key}'.`);
-  }
-  return pointToBlstCHex(curve, curve.fromObject(p));
-}
-
 function pointToBlstCHex(curve, p) {
   const tmp = new Uint8Array(curve.F.n8);
 
@@ -130,13 +183,6 @@ function pointToBlstCHex(curve, p) {
   ffC2blstC(tmp, 0);
 
   return Buffer.from(tmp).toString("hex");
-}
-
-function pointObjectToUncompressedHex(curve, p, key) {
-  if (p === undefined || p === null) {
-    throw new Error(`verification_key: missing '${key}'.`);
-  }
-  return pointToUncompressedHex(curve, curve.fromObject(p));
 }
 
 function pointToUncompressedHex(curve, p) {
@@ -150,6 +196,18 @@ async function plonkVk(zkey) {
 
   try {
     assertPlonkPublicInputCount(zkey.nPublic, "verification_key.nPublic");
+    assertTonBlsCurve(curve.name, "verification_key.curve");
+    assertBls12381Point(curve.G2, curve.r, zkey.X_2, "verification_key.X_2", {
+      allowIdentity: false,
+    });
+    for (const key of G1_KEYS) {
+      assertBls12381Point(
+        curve.G1,
+        curve.r,
+        zkey[key],
+        `verification_key.${key}`,
+      );
+    }
 
     let vKey = {
       protocol: zkey.protocol,

@@ -261,3 +261,25 @@ test("Func PLONK getVerify passes Func calldata through unchanged", async () => 
 
   assert.equal(await verifier.getVerify(provider, args), true);
 });
+
+test("Func PLONK sendVerify sends the receiver-compatible proof message", async () => {
+  const { Verifier } = await loadTemplateModule("Verifier_func_plonk.ts");
+  const verifier = Verifier.createFromAddress(
+    Address.parseRaw(`0:${"0".repeat(64)}`),
+  );
+  const args = makeFuncPlonkArgs();
+  const calls = [];
+  const provider = {
+    internal: async (...received) => {
+      calls.push(received);
+    },
+  };
+
+  await verifier.sendVerify(provider, {}, 50000000n, args);
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0][1].value, 50000000n);
+  const body = calls[0][1].body.beginParse();
+  assert.equal(body.loadUint(32), 0x76524659);
+  assert.equal(body.loadRef().refs.length, 4);
+});
