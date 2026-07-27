@@ -42,44 +42,6 @@ import {
 `proofToMessageBoc` converts proof/public-signal JSON into a base64 or hex BOC internal message body for supported generated verifier templates.
 PLONK verifier generation supports at most `MAX_PLONK_PUBLIC_INPUTS` public inputs because the TVM Keccak transcript helper is limited to 255 tuple items.
 
-## Security and integration
-
-Generated Groth16 verifiers require TVM global version 4 or newer. Every public verification path
-checks the exact compressed proof-point shape (`piA = 384` bits, `piB = 768` bits, `piC = 384`
-bits, with no refs), subgroup membership, and non-identity before scalar multiplication or pairing.
-Malformed proofs and non-canonical public inputs are rejected with the template's controlled
-`InvalidInputs` error (`258` in Tolk, `262` in FunC/Tact). Scalar multiplication modulo the
-BLS12-381 scalar order is not accepted as an alias for an out-of-range public input.
-
-Verification keys are validated before code generation: the curve must be BLS12-381, `IC.length`
-must equal `nPublic + 1` when that metadata is present, all points must be valid and in the required
-subgroup, and alpha/beta/gamma/delta must be non-identity. Emitted constants use canonical
-compressed encoding and preserve the VK's public-input order. Supported VK sources are the
-snarkjs-compatible, native gnark, and arkworks formats listed above.
-
-Tolk Groth16 internal messages use one proof cell and one public-input cell. The proof cell has no
-bits and exactly three ordinary point-cell refs. The public-input cell contains an 8-bit count and
-a canonical linear chain of up to three signed 257-bit values per ordinary cell. Sibling refs,
-exotic cells, empty continuation cells, alternate chunking, and trailing data are rejected.
-`proofToMessageBoc` and the generated TypeScript wrapper emit this layout. Internal verification
-messages for generated FunC, Tolk, and Tact contracts must attach at least `0.05 TON`; getters run
-the same proof and public-input checks. Both Tolk and FunC PLONK templates also support internal
-verification messages through `proofToMessageBoc`.
-
-This verifier is stateless. It does not provide:
-
-- nullifier replay protection;
-- nonce or query-id protection;
-- known-root validation;
-- recipient binding;
-- chain-id or contract-address domain separation;
-- state-transition validation.
-
-Put those protocol rules in a stateful typed wrapper. In particular, accept a full recipient
-address and derive the field inside the contract; do not accept an independently supplied
-`recipientField`. The following integration sketch shows the required ordering (application-specific
-storage and proof fields are abbreviated):
-
 ## Usage CLI
 
 ```sh
