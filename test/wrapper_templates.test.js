@@ -57,7 +57,8 @@ test("import-wrapper copies Func and Tolk Groth16 wrappers separately, with Tolk
 
     assert.match(tolkWrapper, /TupleBuilder/);
     assert.match(tolkWrapper, /serializeIntArray/);
-    assert.match(tolkWrapper, /storeSlice\(pubInputs\.beginParse\(\)\)/);
+    assert.match(tolkWrapper, /\.storeRef\(proof\)/);
+    assert.match(tolkWrapper, /\.storeRef\(pubInputs\)/);
     assert.match(tolkWrapper, /writeTuple\(this\.tupleFromInputList\(opts\.pubInputs\)\)/);
     assert.doesNotMatch(tolkWrapper, /\.storeDict\(/);
     assert.doesNotMatch(funcWrapper, /queryID/);

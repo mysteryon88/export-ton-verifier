@@ -8,6 +8,7 @@ import ejs from "ejs";
 import { utils } from "ffjavascript";
 import { generateVerifier } from "../src/generateVerifiers.js";
 import {
+  assertBls12381Groth16VerificationKey,
   decodeBls12381G1,
 } from "../src/formats/common.js";
 import { normalizePlonkVerificationKey } from "../src/export_plonk_vk.js";
@@ -130,6 +131,48 @@ test("Groth16 templates reject non-canonical public inputs", async () => {
   assert.match(tact, /value >= 0 && value < blsR\(\)/);
 });
 
+test("all Groth16 templates validate proof shape, subgroup, and identity before pairing", async () => {
+  const templates = await Promise.all([
+    renderTemplate("func_verifier_groth16.ejs"),
+    renderTemplate("tolk_verifier_groth16.ejs"),
+    renderTemplate("tact_verifier_groth16.ejs"),
+  ]);
+
+  for (const rendered of templates) {
+    assert.match(rendered, /BLS_G1_INGROUP/);
+    assert.match(rendered, /BLS_G2_INGROUP/);
+    assert.match(rendered, /BLS_G1_ISZERO/);
+    assert.match(rendered, /BLS_G2_ISZERO/);
+    assert.match(rendered, /384/);
+    assert.match(rendered, /768/);
+    assert.match(rendered, /checkProofPoints|check_proof_points/);
+  }
+});
+
+test("Groth16 message parsers reject exotic points and non-canonical payloads", async () => {
+  const [func, tolk, tact] = await Promise.all([
+    renderTemplate("func_verifier_groth16.ejs", 4),
+    renderTemplate("tolk_verifier_groth16.ejs", 4),
+    renderTemplate("tact_verifier_groth16.ejs", 4),
+  ]);
+
+  assert.match(func, /XCTOS/);
+  assert.match(func, /end_parse/);
+
+  assert.match(tolk, /beginParseSpecial\(\)/);
+  assert.match(tolk, /remainingRefsCount\(\) != 1/);
+  assert.match(tolk, /remainingBitsCount\(\) < 257/);
+  assert.match(tolk, /remainingBitsCount\(\) != chunk \* 257/);
+  assert.match(tolk, /checkPublicInputsPayloadShape\(payload\)/);
+  assert.match(tolk, /forceLoadLazyObject\(\)/);
+  assert.match(tolk, /!messageTail\.isEmpty\(\)/);
+
+  assert.match(tact, /XCTOS/);
+  assert.match(tact, /piA: Cell/);
+  assert.match(tact, /piB: Cell/);
+  assert.match(tact, /piC: Cell/);
+});
+
 test("all expensive internal receivers enforce the minimum attached value", async () => {
   const [funcGroth16, tolkGroth16, tactGroth16, funcPlonk, tolkPlonk] =
     await Promise.all([
@@ -218,6 +261,28 @@ test("Groth16 generation rejects identity and non-subgroup core VK points", asyn
       await curve.terminate();
     }
   });
+});
+
+test("Groth16 generation rejects verification keys with inconsistent public input metadata", async () => {
+  const curve = await getCurveFromName("bls12381");
+  try {
+    const g1 = curve.G1.toObject(curve.G1.g);
+    const g2 = curve.G2.toObject(curve.G2.g);
+    assert.throws(
+      () =>
+        assertBls12381Groth16VerificationKey(curve, {
+          vk_alpha_1: g1,
+          vk_beta_2: g2,
+          vk_gamma_2: g2,
+          vk_delta_2: g2,
+          IC: [g1, g1],
+          nPublic: 2,
+        }),
+      /IC.*nPublic/,
+    );
+  } finally {
+    await curve.terminate();
+  }
 });
 
 test("native point decoding rejects compressed and uncompressed non-subgroup points", async () => {

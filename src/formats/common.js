@@ -171,6 +171,21 @@ export function assertBls12381Point(
 }
 
 export function assertBls12381Groth16VerificationKey(curve, vk) {
+  if (!Array.isArray(vk.IC) || vk.IC.length === 0) {
+    throw new Error("verification_key.IC must contain at least one point.");
+  }
+  if (vk.nPublic !== undefined && vk.nPublic !== null) {
+    const nPublic = Number(vk.nPublic);
+    if (!Number.isSafeInteger(nPublic) || nPublic < 0) {
+      throw new Error("verification_key.nPublic must be a non-negative integer.");
+    }
+    if (vk.IC.length !== nPublic + 1) {
+      throw new Error(
+        `verification_key.IC length (${vk.IC.length}) must equal nPublic + 1 (${nPublic + 1}).`,
+      );
+    }
+  }
+
   parseBls12381Point(
     curve.G1,
     curve.r,

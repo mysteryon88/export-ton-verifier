@@ -76,11 +76,15 @@ export class Verifier implements Contract {
     }
 
     // Tolk serializes arrays as uint8 length plus Snake-style continuation cells.
+    const chunks: bigint[][] = [];
+    for (let i = 0; i < list.length; i += 3) {
+      chunks.push(list.slice(i, i + 3));
+    }
+
     let tail: Cell | null = null;
-    for (let i = list.length; i > 0; i -= 3) {
-      const chunk = list.slice(Math.max(0, i - 3), i);
+    for (let i = chunks.length - 1; i >= 0; i -= 1) {
       const cell = beginCell();
-      for (const value of chunk) {
+      for (const value of chunks[i]) {
         cell.storeInt(value, 257);
       }
       if (tail) {
@@ -105,14 +109,17 @@ export class Verifier implements Contract {
     const piAcell = beginCell().storeBuffer(opts.pi_a).endCell();
     const piBcell = beginCell().storeBuffer(opts.pi_b).endCell();
     const piCcell = beginCell().storeBuffer(opts.pi_c).endCell();
+    const proof = beginCell()
+      .storeRef(piAcell)
+      .storeRef(piBcell)
+      .storeRef(piCcell)
+      .endCell();
     const pubInputs = this.serializeIntArray(opts.pubInputs);
 
     const body = beginCell()
       .storeUint(Opcodes.verify, 32)
-      .storeRef(piAcell)
-      .storeRef(piBcell)
-      .storeRef(piCcell)
-      .storeSlice(pubInputs.beginParse())
+      .storeRef(proof)
+      .storeRef(pubInputs)
       .endCell();
 
     return body;

@@ -88,6 +88,17 @@ test("proofToMessageBoc builds Groth16 Tolk and FunC internal messages", async (
 
   assert.equal(opcodeFromBase64(tolk), 0x3b3cca17);
   assert.equal(opcodeFromBase64(func), 0x3b3cca17);
+
+  const [tolkBody] = Cell.fromBoc(Buffer.from(tolk, "base64"));
+  const tolkRoot = tolkBody.beginParse();
+  tolkRoot.loadUint(32);
+  const proof = tolkRoot.loadRef();
+  const publicInputs = tolkRoot.loadRef();
+  assert.equal(tolkRoot.remainingBits, 0);
+  assert.equal(tolkRoot.remainingRefs, 0);
+  assert.equal(proof.bits.length, 0);
+  assert.equal(proof.refs.length, 3);
+  assert.equal(publicInputs.beginParse().loadUint(8), publicSignals.length);
 });
 
 test("proofToMessageBoc rejects Groth16 proofs without curve metadata", async () => {

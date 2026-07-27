@@ -173,10 +173,33 @@ test("Tolk wrapper serializes array<int> payloads in contract-compatible form", 
   const serialized = verifier.serializeIntArray(values);
 
   assert.deepEqual(decodeSerializedIntArray(serialized), values);
+  const canonicalRoot = serialized.beginParse();
+  assert.equal(canonicalRoot.loadUint(8), values.length);
+  assert.equal(canonicalRoot.remainingBits, 3 * 257);
+  assert.equal(canonicalRoot.remainingRefs, 1);
+  const canonicalTail = canonicalRoot.loadRef().beginParse();
+  assert.equal(canonicalTail.remainingBits, 257);
+  assert.equal(canonicalTail.remainingRefs, 0);
   assert.throws(
     () => verifier.serializeIntArray(Array.from({ length: 256 }, (_, i) => BigInt(i))),
     /supports at most 255 items/,
   );
+
+  const body = verifier.buildVerifyBody({
+    pi_a: Buffer.alloc(48, 1),
+    pi_b: Buffer.alloc(96, 2),
+    pi_c: Buffer.alloc(48, 3),
+    pubInputs: values,
+  });
+  const root = body.beginParse();
+  assert.equal(root.loadUint(32), 0x3b3cca17);
+  const proof = root.loadRef();
+  const payload = root.loadRef();
+  assert.equal(root.remainingBits, 0);
+  assert.equal(root.remainingRefs, 0);
+  assert.equal(proof.bits.length, 0);
+  assert.equal(proof.refs.length, 3);
+  assert.deepEqual(decodeSerializedIntArray(payload), values);
 });
 
 test("Tolk PLONK wrapper builds VerifyProofMessage with array<uint256> public inputs", async () => {

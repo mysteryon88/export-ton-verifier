@@ -47,6 +47,12 @@ const multiexpDecls = uniqSizes.map((k) => renderMultiexpDecl(k)).join("\n\n");
 // ASM intrinsics
 asm fun blsG1Add(x: Slice, y: Slice): Slice { BLS_G1_ADD }
 asm fun blsG1Neg(x: Slice): Slice { BLS_G1_NEG }
+asm fun blsG1InGroup(x: Slice): Int { BLS_G1_INGROUP }
+asm fun blsG2InGroup(x: Slice): Int { BLS_G2_INGROUP }
+asm fun blsG1IsZero(x: Slice): Int { BLS_G1_ISZERO }
+asm fun blsG2IsZero(x: Slice): Int { BLS_G2_ISZERO }
+asm fun cellIsExotic(x: Cell): Int { XCTOS NIP }
+asm fun cellToRawSlice(x: Cell): Slice { XCTOS DROP }
 asm fun blsPairing(
   x1: Slice, y1: Slice,
   x2: Slice, y2: Slice,
@@ -78,7 +84,43 @@ const ERR_SCALAR_NOT_IN_FIELD: Int = 259;
 <% } -%>
 const ERR_WRONG_PROOF: Int = 260;
 const ERR_NOT_ENOUGH_VALUE: Int = 261;
+const ERR_INVALID_INPUTS: Int = 262;
 const MIN_VERIFY_VALUE: Int = 50000000;
+
+fun checkProofPoints(piA: Slice, piB: Slice, piC: Slice) {
+  nativeThrowUnless(
+    ERR_INVALID_INPUTS,
+    piA.bits() == 384 && piA.refs() == 0 &&
+    piB.bits() == 768 && piB.refs() == 0 &&
+    piC.bits() == 384 && piC.refs() == 0
+  );
+  nativeThrowUnless(
+    ERR_INVALID_INPUTS,
+    blsG1InGroup(piA) != 0 && blsG2InGroup(piB) != 0 && blsG1InGroup(piC) != 0
+  );
+  nativeThrowUnless(
+    ERR_INVALID_INPUTS,
+    blsG1IsZero(piA) == 0 && blsG2IsZero(piB) == 0 && blsG1IsZero(piC) == 0
+  );
+}
+
+fun loadCheckedG1(point: Cell): Slice {
+  let pointSlice = cellToRawSlice(point);
+  nativeThrowUnless(
+    ERR_INVALID_INPUTS,
+    cellIsExotic(point) == 0 && pointSlice.bits() == 384 && pointSlice.refs() == 0
+  );
+  return pointSlice;
+}
+
+fun loadCheckedG2(point: Cell): Slice {
+  let pointSlice = cellToRawSlice(point);
+  nativeThrowUnless(
+    ERR_INVALID_INPUTS,
+    cellIsExotic(point) == 0 && pointSlice.bits() == 768 && pointSlice.refs() == 0
+  );
+  return pointSlice;
+}
 
 <% if (nPublic > 7) { -%>
 // IC selection helper by index: 1 -> IC1, 2 -> IC2, ...
@@ -111,17 +153,30 @@ fun getPub(pubInputs: map<Int as uint32, Int>, k: Int): Int {
 
 // Message definition
 message (0x3b3cca17) Verify {
-  piA: Slice;
-  piB: Slice;
-  piC: Slice;
+  piA: Cell;
+  piB: Cell;
+  piC: Cell;
   pubInputs: map<Int as uint32, Int>;
 }
 
+// This verifier is stateless.
+// It does not provide:
+// - nullifier replay protection;
+// - nonce or query-id protection;
+// - known-root validation;
+// - recipient binding;
+// - chain-id or contract-address domain separation;
+// - state-transition validation.
 contract Verifier {
 
   receive(msg: Verify) {
     nativeThrowUnless(ERR_NOT_ENOUGH_VALUE, context().value >= MIN_VERIFY_VALUE);
-    let res = self.groth16Verify(msg.piA, msg.piB, msg.piC, msg.pubInputs);
+    let res = self.groth16Verify(
+      loadCheckedG1(msg.piA),
+      loadCheckedG2(msg.piB),
+      loadCheckedG1(msg.piC),
+      msg.pubInputs
+    );
     nativeThrowUnless(ERR_WRONG_PROOF, res);
   }
 
@@ -133,6 +188,7 @@ contract Verifier {
     piC: Slice,
     pubInputs: map<Int as uint32, Int>
   ): Bool {
+    checkProofPoints(piA, piB, piC);
 
 <% if (nPublic === 0) { -%>
     // No public inputs allowed

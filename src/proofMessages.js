@@ -30,11 +30,15 @@ function serializeTolkIntArray(list) {
     throw new Error("Tolk array<int> wrapper supports at most 255 items.");
   }
 
+  const chunks = [];
+  for (let i = 0; i < list.length; i += 3) {
+    chunks.push(list.slice(i, i + 3));
+  }
+
   let tail = null;
-  for (let i = list.length; i > 0; i -= 3) {
-    const chunk = list.slice(Math.max(0, i - 3), i);
+  for (let i = chunks.length - 1; i >= 0; i -= 1) {
     const cell = beginCell();
-    for (const value of chunk) {
+    for (const value of chunks[i]) {
       cell.storeInt(value, 257);
     }
     if (tail) {
@@ -66,19 +70,23 @@ async function groth16MessageCell(proof, publicSignals, lang) {
   const piA = beginCell().storeBuffer(compressed.pi_a).endCell();
   const piB = beginCell().storeBuffer(compressed.pi_b).endCell();
   const piC = beginCell().storeBuffer(compressed.pi_c).endCell();
-  const body = beginCell()
+
+  if (lang === "tolk") {
+    const proof = beginCell().storeRef(piA).storeRef(piB).storeRef(piC).endCell();
+    return beginCell()
+      .storeUint(GROTH16_VERIFY_OP, 32)
+      .storeRef(proof)
+      .storeRef(serializeTolkIntArray(compressed.pubInputs))
+      .endCell();
+  }
+
+  return beginCell()
     .storeUint(GROTH16_VERIFY_OP, 32)
     .storeRef(piA)
     .storeRef(piB)
-    .storeRef(piC);
-
-  if (lang === "tolk") {
-    body.storeSlice(serializeTolkIntArray(compressed.pubInputs).beginParse());
-  } else {
-    body.storeDict(groth16FuncPublicInputs(compressed.pubInputs));
-  }
-
-  return body.endCell();
+    .storeRef(piC)
+    .storeDict(groth16FuncPublicInputs(compressed.pubInputs))
+    .endCell();
 }
 
 function requireTupleCell(args, index, type = "slice") {

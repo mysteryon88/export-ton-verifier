@@ -103,7 +103,8 @@ test("generateVerifier renders the Tolk Groth16 template by default for JSON inp
     assert.deepEqual(logs, []);
     assert.match(rendered, /const IC0: slice/);
     assert.match(rendered, /struct \(0x3b3cca17\) Verify \{/);
-    assert.match(rendered, /pubInputs: RemainingBitsAndRefs/);
+    assert.match(rendered, /proof: cell/);
+    assert.match(rendered, /pubInputs: cell/);
     assert.match(rendered, /\.hexToSlice\(\)/);
     assert.match(rendered, /pubInputs\.get\(1\)/);
     assert.match(rendered, /get fun verify\(piA: slice, piB: slice, piC: slice, pubInputs: array<int>\): bool/);

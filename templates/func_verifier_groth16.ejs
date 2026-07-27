@@ -22,6 +22,7 @@ const publicInputLoads = Array.from({ length: nPublic }, (_, i) => {
     `    (slice input${i}, int ok${i}) = pubInputs~udict_delete_get?(verifier::publicInputKeyLen, ${i});`,
     `    throw_unless(verifier::err::public_not_present, ok${i});`,
     `    int val${i} = input${i}~load_uint(256);`,
+    `    throw_unless(verifier::err::invalid_inputs, input${i}.slice_empty?());`,
     `    throw_unless(verifier::err::scalar_not_in_field, val${i} < bls_r());`,
   ].join("\n");
 }).join("\n");
@@ -54,6 +55,15 @@ const cpubAssembly = sizes.map((k, i) => {
 %>
 #include "imports/stdlib.fc";
 
+;; This verifier is stateless.
+;; It does not provide:
+;; - nullifier replay protection;
+;; - nonce or query-id protection;
+;; - known-root validation;
+;; - recipient binding;
+;; - chain-id or contract-address domain separation;
+;; - state-transition validation.
+
 ;; ops
 const op::verify = "op::verify"c;
 
@@ -79,6 +89,7 @@ const int verifier::err::scalar_not_in_field = 259;
 const int verifier::err::too_many_publics = 258;
 const int verifier::err::wrong_proof = 260;
 const int verifier::err::not_enough_value = 261;
+const int verifier::err::invalid_inputs = 262;
 
 ;; bls intrinsics
 <% if (nPublic > 0) { -%>
@@ -86,7 +97,42 @@ int bls_r() asm "BLS_PUSHR";
 <% } -%>
 slice bls_g1_add(slice x, slice y) asm "BLS_G1_ADD";
 slice bls_g1_neg(slice x) asm "BLS_G1_NEG";
+int bls_g1_in_group(slice x) asm "BLS_G1_INGROUP";
+int bls_g2_in_group(slice x) asm "BLS_G2_INGROUP";
+int bls_g1_is_zero(slice x) asm "BLS_G1_ISZERO";
+int bls_g2_is_zero(slice x) asm "BLS_G2_ISZERO";
 int bls_pairing(slice x1, slice y1, slice x2, slice y2, slice x3, slice y3, slice x4, slice y4, int n) asm "BLS_PAIRING";
+(slice, int) begin_parse_special(cell c) asm "XCTOS";
+
+() check_g1_shape(slice point) impure {
+    throw_unless(verifier::err::invalid_inputs, (point.slice_bits() == 384) & (point.slice_refs() == 0));
+}
+
+() check_g2_shape(slice point) impure {
+    throw_unless(verifier::err::invalid_inputs, (point.slice_bits() == 768) & (point.slice_refs() == 0));
+}
+
+() check_proof_points(slice piA, slice piB, slice piC) impure {
+    check_g1_shape(piA);
+    check_g2_shape(piB);
+    check_g1_shape(piC);
+    throw_unless(verifier::err::invalid_inputs, bls_g1_in_group(piA) & bls_g2_in_group(piB) & bls_g1_in_group(piC));
+    throw_if(verifier::err::invalid_inputs, bls_g1_is_zero(piA) | bls_g2_is_zero(piB) | bls_g1_is_zero(piC));
+}
+
+slice load_checked_g1(cell point) impure {
+    (slice point_slice, int is_exotic) = point.begin_parse_special();
+    throw_if(verifier::err::invalid_inputs, is_exotic);
+    check_g1_shape(point_slice);
+    return point_slice;
+}
+
+slice load_checked_g2(cell point) impure {
+    (slice point_slice, int is_exotic) = point.begin_parse_special();
+    throw_if(verifier::err::invalid_inputs, is_exotic);
+    check_g2_shape(point_slice);
+    return point_slice;
+}
 
 <% if (multiexpDecls) { -%>
 <%- multiexpDecls %>
@@ -98,6 +144,7 @@ int bls_pairing(slice x1, slice y1, slice x2, slice y2, slice x3, slice y3, slic
     slice piC,
     cell pubInputs
 ) impure {
+    check_proof_points(piA, piB, piC);
 <% if (nPublic === 0) { -%>
     ;; no public inputs: cpub = IC0
     ;; IMPORTANT: when nPublic == 0, pubInputs must be empty (no extra keys allowed)
@@ -134,10 +181,14 @@ int bls_pairing(slice x1, slice y1, slice x2, slice y2, slice x3, slice y3, slic
 (int) verifyProof(
     slice in_msg_body
 ) impure {
-    slice piA = in_msg_body~load_ref().begin_parse();
-    slice piB = in_msg_body~load_ref().begin_parse();
-    slice piC = in_msg_body~load_ref().begin_parse();
+    throw_unless(verifier::err::invalid_inputs, in_msg_body.slice_bits() == 1);
+    int has_dict = in_msg_body.preload_uint(1);
+    throw_unless(verifier::err::invalid_inputs, in_msg_body.slice_refs() == 3 + has_dict);
+    slice piA = load_checked_g1(in_msg_body~load_ref());
+    slice piB = load_checked_g2(in_msg_body~load_ref());
+    slice piC = load_checked_g1(in_msg_body~load_ref());
     var pubInputs = in_msg_body~load_dict();
+    in_msg_body.end_parse();
 
     return groth16Verify(
         piA,
@@ -167,5 +218,10 @@ int bls_pairing(slice x1, slice y1, slice x2, slice y2, slice x3, slice y3, slic
 }
 
 int verify(slice piA, slice piB, slice piC, slice pubInputs) method_id {
-  return groth16Verify(piA, piB, piC, pubInputs~load_dict());
+  throw_unless(verifier::err::invalid_inputs, pubInputs.slice_bits() == 1);
+  int has_dict = pubInputs.preload_uint(1);
+  throw_unless(verifier::err::invalid_inputs, pubInputs.slice_refs() == has_dict);
+  cell inputs = pubInputs~load_dict();
+  pubInputs.end_parse();
+  return groth16Verify(piA, piB, piC, inputs);
 }
