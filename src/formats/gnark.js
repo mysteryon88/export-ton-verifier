@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import fs from "fs/promises";
 import {
   BinaryReader,
   BLS12381_CURVE_NAME,
@@ -8,9 +7,11 @@ import {
   g1Point,
   g2Point,
   makeGroth16VerificationKey,
+  readFileBounded,
   requireField,
   withBls12381,
 } from "./common.js";
+import { MAX_GNARK_G1_POINTS } from "../limits.js";
 
 const BLS_FIELD_BYTES = 48;
 const GNARK_FLAG_MASK = 0xe0;
@@ -27,6 +28,11 @@ export async function normalizeGnarkJsonVerificationKey(value) {
   if (!Array.isArray(k)) {
     throw new Error("verification key: G1.K must be an array.");
   }
+  if (k.length > MAX_GNARK_G1_POINTS) {
+    throw new Error(
+      `verification key: G1.K length must be at most ${MAX_GNARK_G1_POINTS}.`,
+    );
+  }
 
   const verificationKey = makeGroth16VerificationKey({
     curve: BLS12381_CURVE_NAME,
@@ -42,8 +48,8 @@ export async function normalizeGnarkJsonVerificationKey(value) {
 }
 
 export async function loadGnarkBinaryVerificationKey(path) {
-  const bytes = await fs.readFile(path);
-  return normalizeGnarkBinaryVerificationKey(Uint8Array.from(bytes), path);
+  const bytes = await readFileBounded(path, "gnark verification key");
+  return normalizeGnarkBinaryVerificationKey(bytes, path);
 }
 
 export async function normalizeGnarkBinaryVerificationKey(
@@ -60,6 +66,11 @@ export async function normalizeGnarkBinaryVerificationKey(
     const delta = readG2(reader, curve, "G2.Delta");
 
     const icLen = reader.readU32BE("G1.K length");
+    if (icLen > MAX_GNARK_G1_POINTS) {
+      throw new Error(
+        `G1.K length must be at most ${MAX_GNARK_G1_POINTS}.`,
+      );
+    }
     const IC = [];
     for (let idx = 0; idx < icLen; idx += 1) {
       IC.push(readG1(reader, curve, `G1.K[${idx}]`));
@@ -180,14 +191,10 @@ function pointLength(reader, compressedSize, field) {
 
 function readU64SliceSlice(reader, field) {
   const outerLen = reader.readU32BE(`${field} length`);
-  const outer = [];
-  for (let outerIdx = 0; outerIdx < outerLen; outerIdx += 1) {
-    const innerLen = reader.readU32BE(`${field}[${outerIdx}] length`);
-    const inner = [];
-    for (let innerIdx = 0; innerIdx < innerLen; innerIdx += 1) {
-      inner.push(reader.readU64BE(`${field}[${outerIdx}][${innerIdx}]`));
-    }
-    outer.push(inner);
+  if (outerLen !== 0) {
+    throw new Error(
+      "gnark commitment keys are not supported by TON verifier generation.",
+    );
   }
-  return outer;
+  return [];
 }

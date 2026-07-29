@@ -1,6 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-import fs from "fs/promises";
+import { createReadStream } from "fs";
 import { buildBls12381 } from "ffjavascript";
+import {
+  MAX_JSON_CONTAINER_ENTRIES,
+  MAX_JSON_DEPTH,
+  MAX_JSON_NODES,
+  MAX_JSON_NUMERIC_STRING_LENGTH,
+  MAX_VERIFICATION_KEY_BYTES,
+} from "../limits.js";
 
 export const BLS12381_CURVE_NAME = "bls12381";
 
@@ -84,12 +91,101 @@ export function makeGroth16VerificationKey({
 }
 
 export async function readJson(path, label) {
-  const content = await fs.readFile(path, "utf8");
+  const content = (await readFileBounded(path, label)).toString("utf8");
   try {
-    return JSON.parse(content);
+    const value = JSON.parse(content);
+    assertBoundedJson(value);
+    return value;
   } catch (err) {
+    if (err?.code === "ERR_VERIFICATION_KEY_LIMIT") throw err;
     throw new Error(`invalid ${label} JSON in ${path}: ${err.message}`);
   }
+}
+
+export async function readFileBounded(
+  path,
+  label,
+  maxBytes = MAX_VERIFICATION_KEY_BYTES,
+) {
+  const chunks = [];
+  let total = 0;
+  for await (const chunk of createReadStream(path)) {
+    total += chunk.length;
+    if (total > maxBytes) {
+      throw limitError(
+        `${label} artifact is too large: maximum is ${maxBytes} bytes.`,
+      );
+    }
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks, total);
+}
+
+export function assertBoundedJson(value) {
+  const pending = [[value, 0]];
+  let nodes = 0;
+
+  while (pending.length > 0) {
+    const [current, depth] = pending.pop();
+    nodes += 1;
+    if (nodes > MAX_JSON_NODES) {
+      throw limitError(`verification key JSON exceeds ${MAX_JSON_NODES} values.`);
+    }
+    if (depth > MAX_JSON_DEPTH) {
+      throw limitError(`verification key JSON nesting exceeds ${MAX_JSON_DEPTH}.`);
+    }
+    if (typeof current === "string" && isNumericString(current)) {
+      if (current.length > MAX_JSON_NUMERIC_STRING_LENGTH) {
+        throw limitError(
+          `verification key JSON numeric string exceeds ${MAX_JSON_NUMERIC_STRING_LENGTH} characters.`,
+        );
+      }
+      continue;
+    }
+    if (!current || typeof current !== "object") continue;
+
+    if (Array.isArray(current)) {
+      if (current.length > MAX_JSON_CONTAINER_ENTRIES) {
+        throw limitError(
+          `verification key JSON container exceeds ${MAX_JSON_CONTAINER_ENTRIES} entries.`,
+        );
+      }
+      for (const child of current) pending.push([child, depth + 1]);
+      continue;
+    }
+
+    let entries = 0;
+    for (const key in current) {
+      if (!Object.hasOwn(current, key)) continue;
+      entries += 1;
+      if (entries > MAX_JSON_CONTAINER_ENTRIES) {
+        throw limitError(
+          `verification key JSON container exceeds ${MAX_JSON_CONTAINER_ENTRIES} entries.`,
+        );
+      }
+    }
+    for (const key in current) {
+      if (Object.hasOwn(current, key)) {
+        pending.push([current[key], depth + 1]);
+      }
+    }
+  }
+}
+
+function isNumericString(value) {
+  const trimmed = value.trim();
+  return (
+    /^[+-]?[0-9]+$/.test(trimmed) ||
+    /^0x[0-9a-f]+$/i.test(trimmed) ||
+    /^0b[01]+$/i.test(trimmed) ||
+    /^0o[0-7]+$/i.test(trimmed)
+  );
+}
+
+function limitError(message) {
+  const error = new Error(message);
+  error.code = "ERR_VERIFICATION_KEY_LIMIT";
+  return error;
 }
 
 export function decodeHex(raw, field) {

@@ -3,6 +3,8 @@ import { zKey } from "snarkjs";
 import zkeyExportPlonkVerificationKey, {
   normalizePlonkVerificationKey,
 } from "../export_plonk_vk.js";
+import { assertBoundedJson } from "./common.js";
+import { assertZkeyFieldWidths } from "../helpers.js";
 
 export const SNARKJS_JSON_SOURCE = "snarkjs-json";
 export const SNARKJS_ZKEY_SOURCE = "snarkjs-zkey";
@@ -30,6 +32,7 @@ const PLONK_REQUIRED_FIELDS = [
 ];
 
 export function normalizeSnarkjsVerificationKey(vkRaw) {
+  assertBoundedJson(vkRaw);
   if (!vkRaw?.protocol) {
     throw new Error("verification_key: missing 'protocol'.");
   }
@@ -47,6 +50,7 @@ export async function loadSnarkjsZkeyVerificationKey(
   { logger = null } = {},
 ) {
   logger?.log?.("Loading verification key from .zkey...");
+  await assertZkeyFieldWidths(inputPath);
   const vkRaw = await zKey.exportVerificationKey(inputPath);
   ensureSupportedProtocol(vkRaw.protocol, ".zkey");
   return vkRaw;

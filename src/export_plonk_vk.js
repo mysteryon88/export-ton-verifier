@@ -23,13 +23,15 @@
 import * as binFileUtils from "@iden3/binfileutils";
 import { utils } from "ffjavascript";
 
-import { readHeaderPlonk } from "./helpers.js";
+import { assertZkeyFieldWidths, readHeaderPlonk } from "./helpers.js";
 import { getCurveFromName } from "./utils.js";
 import {
   assertPlonkPublicInputCount,
+  assertPlonkPower,
   assertTonBlsCurve,
 } from "./limits.js";
 import {
+  assertBoundedJson,
   assertBls12381Point,
   decodeBls12381G1,
   decodeBls12381G2,
@@ -43,6 +45,7 @@ const G1_KEYS = ["Qm", "Ql", "Qr", "Qo", "Qc", "S1", "S2", "S3"];
 const G1_UC_KEYS = ["Qm_uc", "Ql_uc", "Qr_uc", "Qo_uc", "Qc_uc", "S1_uc", "S2_uc", "S3_uc"];
 
 export default async function zkeyExportPlonkVerificationKey(zkeyName) {
+  await assertZkeyFieldWidths(zkeyName);
   const { fd, sections } = await binFileUtils.readBinFile(zkeyName, "zkey", 2);
 
   try {
@@ -54,12 +57,15 @@ export default async function zkeyExportPlonkVerificationKey(zkeyName) {
 }
 
 export async function normalizePlonkVerificationKey(vkRaw) {
+  assertBoundedJson(vkRaw);
   if (vkRaw.protocol !== "plonk") {
     throw new Error(`Expected PLONK verification key (got '${vkRaw.protocol}').`);
   }
 
   const nPublic = numberField(vkRaw, "nPublic");
   assertPlonkPublicInputCount(nPublic, "verification_key.nPublic");
+  const power = numberField(vkRaw, "power");
+  assertPlonkPower(power, "verification_key.power");
   assertTonBlsCurve(vkRaw.curve, "verification_key.curve");
 
   const vk = unstringifyBigInts(vkRaw);
@@ -68,7 +74,7 @@ export async function normalizePlonkVerificationKey(vkRaw) {
   try {
     if (isTemplateReadyPlonkVerificationKey(vkRaw)) {
       validateTemplateReadyPlonkVerificationKey(curve, vkRaw);
-      return stringifyBigInts({ ...vkRaw, nPublic });
+      return stringifyBigInts({ ...vkRaw, nPublic, power });
     }
 
     const x2 = parseBls12381Point(
@@ -82,12 +88,12 @@ export async function normalizePlonkVerificationKey(vkRaw) {
       protocol: "plonk",
       curve: curve.name,
       nPublic,
-      power: numberField(vkRaw, "power"),
+      power,
       k1: scalarToString(curve, vk.k1, "k1"),
       k2: scalarToString(curve, vk.k2, "k2"),
       w:
         vk.w === undefined
-          ? scalarToString(curve, curve.Fr.w[numberField(vkRaw, "power")], "w")
+          ? scalarToString(curve, curve.Fr.w[power], "w")
           : scalarToString(curve, vk.w, "w"),
       X_2: pointToBlstCHex(curve.G2, x2),
     };
@@ -156,7 +162,7 @@ function validateTemplateReadyPlonkVerificationKey(curve, vkRaw) {
 
 function numberField(vkRaw, key) {
   const value = Number(vkRaw[key]);
-  if (!Number.isInteger(value) || value < 0) {
+  if (!Number.isSafeInteger(value) || value < 0) {
     throw new Error(`verification_key: invalid '${key}'.`);
   }
   return value;
@@ -196,6 +202,7 @@ async function plonkVk(zkey) {
 
   try {
     assertPlonkPublicInputCount(zkey.nPublic, "verification_key.nPublic");
+    assertPlonkPower(zkey.power, "verification_key.power");
     assertTonBlsCurve(curve.name, "verification_key.curve");
     assertBls12381Point(curve.G2, curve.r, zkey.X_2, "verification_key.X_2", {
       allowIdentity: false,

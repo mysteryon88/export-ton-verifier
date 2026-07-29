@@ -19,15 +19,30 @@ export function assertTonBlsCurve(raw, field = "curve") {
 }
 
 export const MAX_PLONK_PUBLIC_INPUTS = 244;
+export const MAX_PLONK_POWER = 32;
+export const MAX_VERIFICATION_KEY_BYTES = 16 * 1024 * 1024;
+export const MAX_JSON_DEPTH = 64;
+export const MAX_JSON_NODES = 10_000;
+export const MAX_JSON_CONTAINER_ENTRIES = 4096;
+export const MAX_JSON_NUMERIC_STRING_LENGTH = 1024;
+export const MAX_GNARK_G1_POINTS = 4096;
 
 export function assertPlonkPublicInputCount(count, field = "public inputs") {
-  if (!Number.isInteger(count) || count < 0) {
+  if (!Number.isSafeInteger(count) || count < 0) {
     throw new Error(`${field}: public input count must be a non-negative integer.`);
   }
 
   if (count > MAX_PLONK_PUBLIC_INPUTS) {
     throw new Error(
       `${field}: PLONK verifier supports at most ${MAX_PLONK_PUBLIC_INPUTS} public inputs because the TVM Keccak transcript is limited to 255 tuple items.`,
+    );
+  }
+}
+
+export function assertPlonkPower(power, field = "PLONK power") {
+  if (!Number.isSafeInteger(power) || power < 0 || power > MAX_PLONK_POWER) {
+    throw new Error(
+      `${field}: must be a non-negative safe integer and at most ${MAX_PLONK_POWER}.`,
     );
   }
 }

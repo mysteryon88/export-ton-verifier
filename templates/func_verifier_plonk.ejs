@@ -100,6 +100,8 @@ slice bls::g1_add(slice a, slice b) asm "BLS_G1_ADD";
 slice bls::g1_mul(slice x, int s) asm "BLS_G1_MUL";
 slice bls::g1_sub(slice a, slice b) asm "BLS_G1_SUB";
 slice bls::g1_neg(slice a) asm "BLS_G1_NEG";
+int bls::g1_in_group(slice x) asm "BLS_G1_INGROUP";
+int bls::g1_is_zero(slice x) asm "BLS_G1_ISZERO";
 
 ;; Convert scalar to slice for Keccak256 transcript (Big-Endian, 32 bytes)
 slice verifier::scalar_to_slice(int x) inline {
@@ -180,6 +182,11 @@ int addmod(int x, int y, int z) inline {
     throw_unless(verifier::err::scalar_not_in_field, x < bls::R());
 }
 
+() verifier::check_proof_point(slice point) impure inline {
+    throw_unless(verifier::err::invalid_proof, bls::g1_in_group(point));
+    throw_if(verifier::err::invalid_proof, bls::g1_is_zero(point));
+}
+
 ;; Main verify function
 ;; Compressed points (A, B, C, Z, T1, T2, T3, Wxi, Wxiw) - for BLS operations
 ;; Uncompressed points (A_uc, B_uc, C_uc, Z_uc, T1_uc, T2_uc, T3_uc, Wxi_uc, Wxiw_uc) - for Keccak256 transcript
@@ -192,6 +199,16 @@ int verify(
     slice T1_uc, slice T2_uc, slice T3_uc,
     slice Wxi_uc, slice Wxiw_uc
 ) method_id {
+    verifier::check_proof_point(A);
+    verifier::check_proof_point(B);
+    verifier::check_proof_point(C);
+    verifier::check_proof_point(Z);
+    verifier::check_proof_point(T1);
+    verifier::check_proof_point(T2);
+    verifier::check_proof_point(T3);
+    verifier::check_proof_point(Wxi);
+    verifier::check_proof_point(Wxiw);
+
     verifier::check_field(eval_a);
     verifier::check_field(eval_b);
     verifier::check_field(eval_c);

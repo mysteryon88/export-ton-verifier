@@ -263,6 +263,26 @@ test("Groth16 generation rejects identity and non-subgroup core VK points", asyn
   });
 });
 
+test("FunC and Tolk PLONK verifiers validate every proof point before arithmetic", async () => {
+  const [func, tolk] = await Promise.all([
+    renderTemplate("func_verifier_plonk.ejs"),
+    renderTemplate("tolk_verifier_plonk.ejs"),
+  ]);
+
+  for (const rendered of [func, tolk]) {
+    assert.match(rendered, /BLS_G1_INGROUP/);
+    assert.match(rendered, /BLS_G1_ISZERO/);
+  }
+  assert.match(
+    func,
+    /check_proof_point\(A\);[\s\S]*check_proof_point\(B\);[\s\S]*check_proof_point\(C\);[\s\S]*check_proof_point\(Z\);[\s\S]*check_proof_point\(T1\);[\s\S]*check_proof_point\(T2\);[\s\S]*check_proof_point\(T3\);[\s\S]*check_proof_point\(Wxi\);[\s\S]*check_proof_point\(Wxiw\);/,
+  );
+  assert.match(
+    tolk,
+    /checkProofPoint\(a\);[\s\S]*checkProofPoint\(b\);[\s\S]*checkProofPoint\(c\);[\s\S]*checkProofPoint\(z\);[\s\S]*checkProofPoint\(t1\);[\s\S]*checkProofPoint\(t2\);[\s\S]*checkProofPoint\(t3\);[\s\S]*checkProofPoint\(wxi\);[\s\S]*checkProofPoint\(wxiw\);/,
+  );
+});
+
 test("Groth16 generation rejects verification keys with inconsistent public input metadata", async () => {
   const curve = await getCurveFromName("bls12381");
   try {
