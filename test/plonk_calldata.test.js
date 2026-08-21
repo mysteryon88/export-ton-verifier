@@ -55,6 +55,15 @@ test("PLONK calldata helpers expose Func dict-cell and Tolk tuple public inputs"
   );
 });
 
+test("Func PLONK calldata represents zero public inputs as one exact empty cell", async () => {
+  const { proof } = await makeProofAndPublicInputs();
+  const calldata = await exportPlonkFuncCalldata(proof, []);
+
+  assert.equal(calldata[15].type, "cell");
+  assert.equal(calldata[15].cell.bits.length, 0);
+  assert.equal(calldata[15].cell.refs.length, 0);
+});
+
 test("groth16CompressProof rejects non-BLS proof metadata before compression", async () => {
   await assert.rejects(
     groth16CompressProof(

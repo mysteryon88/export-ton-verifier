@@ -44,7 +44,7 @@ export async function inspectVerifierInput(
     checks.push(
       check("plonk-public-inputs", () => {
         assertPlonkPublicInputCount(nPublic, "verification_key.nPublic");
-        return "PLONK public input count fits TVM Keccak tuple limits.";
+        return "PLONK public input count fits internal-message gas limits.";
       }),
     );
   }

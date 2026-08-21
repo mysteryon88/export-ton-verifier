@@ -3,14 +3,14 @@ import assert from "node:assert/strict";
 import fs from "fs/promises";
 import os from "os";
 import path from "path";
-import { execFileSync } from "child_process";
-import { fileURLToPath } from "url";
 import { utils } from "ffjavascript";
 import { getCurveFromName } from "../src/utils.js";
+import {
+  repoRoot,
+  runCliInProcess,
+  runCliSuccess,
+} from "../test-support/run_cli.js";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const repoRoot = path.join(__dirname, "..");
-const cliPath = path.join(repoRoot, "src/cli.js");
 const { stringifyBigInts } = utils;
 
 async function withTempDir(run) {
@@ -24,32 +24,10 @@ async function withTempDir(run) {
   }
 }
 
-function runCliExpectFailure(args, { cwd = repoRoot } = {}) {
-  try {
-    execFileSync(process.execPath, [cliPath, ...args], {
-      cwd,
-      stdio: "pipe",
-    });
-    throw new Error(`CLI unexpectedly succeeded: ${args.join(" ")}`);
-  } catch (err) {
-    if (err instanceof Error && !("status" in err)) {
-      throw err;
-    }
-
-    return {
-      status: err.status ?? 1,
-      stdout: String(err.stdout ?? ""),
-      stderr: String(err.stderr ?? ""),
-    };
-  }
-}
-
-function runCliSuccess(args) {
-  return execFileSync(process.execPath, [cliPath, ...args], {
-    cwd: repoRoot,
-    stdio: "pipe",
-    encoding: "utf8",
-  });
+async function runCliExpectFailure(args, { cwd = repoRoot } = {}) {
+  const result = await runCliInProcess(args, { cwd });
+  assert.notEqual(result.status, 0, `CLI unexpectedly succeeded: ${args.join(" ")}`);
+  return result;
 }
 
 async function writeGroth16JsonVk(filePath, nPublic = 1) {
@@ -74,8 +52,8 @@ async function writeGroth16JsonVk(filePath, nPublic = 1) {
   }
 }
 
-test("CLI help states Tolk is the default for PLONK and FunC needs --func", () => {
-  const output = runCliSuccess(["--help"]);
+test("CLI help states Tolk is the default for PLONK and FunC needs --func", async () => {
+  const output = await runCliSuccess(["--help"]);
 
   assert.match(output, /Tolk is the default for Groth16 and PLONK verifier generation/);
   assert.match(output, /Use --func to generate FunC output/);
@@ -84,7 +62,7 @@ test("CLI help states Tolk is the default for PLONK and FunC needs --func", () =
 test("CLI rejects conflicting language flags for import-wrapper", async () => {
   await withTempDir(async (tempDir) => {
     const destPath = path.join(tempDir, "Verifier.ts");
-    const result = runCliExpectFailure([
+    const result = await runCliExpectFailure([
       "import-wrapper",
       destPath,
       "--groth16",
@@ -100,15 +78,15 @@ test("CLI rejects conflicting language flags for import-wrapper", async () => {
 test("CLI requires a protocol flag for import-wrapper", async () => {
   await withTempDir(async (tempDir) => {
     const destPath = path.join(tempDir, "Verifier.ts");
-    const result = runCliExpectFailure(["import-wrapper", destPath]);
+    const result = await runCliExpectFailure(["import-wrapper", destPath]);
 
     assert.notEqual(result.status, 0);
     assert.match(result.stderr, /Missing protocol flag: use --groth16 or --plonk/);
   });
 });
 
-test("CLI reports missing import-wrapper destination without a stack trace", () => {
-  const result = runCliExpectFailure(["import-wrapper"]);
+test("CLI reports missing import-wrapper destination without a stack trace", async () => {
+  const result = await runCliExpectFailure(["import-wrapper"]);
 
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /Error: Missing <destPath> for 'import-wrapper'\./);
@@ -120,7 +98,7 @@ test("CLI reports missing import-wrapper destination without a stack trace", () 
 
 test("CLI does not treat protocol flags as an import-wrapper destination", async () => {
   await withTempDir(async (tempDir) => {
-    const result = runCliExpectFailure(
+    const result = await runCliExpectFailure(
       ["import-wrapper", "--groth16", "--force"],
       { cwd: tempDir },
     );
@@ -138,7 +116,7 @@ test("CLI refuses to overwrite an existing wrapper without --force", async () =>
     const destPath = path.join(tempDir, "Verifier.ts");
     await fs.writeFile(destPath, "// existing wrapper", "utf8");
 
-    const result = runCliExpectFailure([
+    const result = await runCliExpectFailure([
       "import-wrapper",
       destPath,
       "--groth16",
@@ -150,8 +128,8 @@ test("CLI refuses to overwrite an existing wrapper without --force", async () =>
   });
 });
 
-test("CLI reports missing values for --wrapper-dest before touching the input file", () => {
-  const result = runCliExpectFailure([
+test("CLI reports missing values for --wrapper-dest before touching the input file", async () => {
+  const result = await runCliExpectFailure([
     "missing-input.json",
     "verifier.tolk",
     "--wrapper-dest",
@@ -162,8 +140,8 @@ test("CLI reports missing values for --wrapper-dest before touching the input fi
   assert.doesNotMatch(result.stderr, /Input file not found/);
 });
 
-test("CLI does not treat --wrapper-dest value as the verifier output path", () => {
-  const result = runCliExpectFailure([
+test("CLI does not treat --wrapper-dest value as the verifier output path", async () => {
+  const result = await runCliExpectFailure([
     "package.json",
     "--wrapper-dest",
     "wrappers",
@@ -174,8 +152,8 @@ test("CLI does not treat --wrapper-dest value as the verifier output path", () =
   assert.doesNotMatch(result.stderr, /could not auto-detect verification key JSON format/);
 });
 
-test("CLI rejects the removed --vk flag", () => {
-  const result = runCliExpectFailure([
+test("CLI rejects the removed --vk flag", async () => {
+  const result = await runCliExpectFailure([
     "unused-input.json",
     "verifier.tolk",
     "--vk",
@@ -191,7 +169,7 @@ test("CLI generation keeps progress output enabled", async () => {
     const outputPath = path.join(tempDir, "verifier.tolk");
     await writeGroth16JsonVk(inputPath);
 
-    const output = runCliSuccess([inputPath, outputPath]);
+    const output = await runCliSuccess([inputPath, outputPath]);
 
     assert.match(output, /Using template for: tolk groth16/);
     assert.match(output, /Done\./);

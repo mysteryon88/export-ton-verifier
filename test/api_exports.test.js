@@ -16,7 +16,6 @@ test("PLONK calldata helpers are exported for Func and Tolk layouts", async () =
     readRepoFile("src/index.ts"),
     readRepoFile("README.md"),
   ]);
-  const buildConfig = await readRepoFile("tsup.config.mjs");
   const packageJson = JSON.parse(await readRepoFile("package.json"));
 
   for (const content of apiFiles) {
@@ -27,9 +26,11 @@ test("PLONK calldata helpers are exported for Func and Tolk layouts", async () =
     assert.match(content, /MAX_PLONK_PUBLIC_INPUTS/);
   }
 
-  assert.match(buildConfig, /export_plonk_calldata/);
+  assert.match(packageJson.scripts.build, /esbuild/);
+  assert.match(packageJson.scripts.build, /export_plonk_calldata/);
+  assert.match(packageJson.scripts.build, /tsc src\/index\.ts/);
   assert.equal(packageJson.dependencies["@iden3/binfileutils"], "0.0.12");
-  assert.equal(packageJson.scripts.build, "tsup");
+  assert.equal(packageJson.devDependencies.esbuild, "0.27.7");
   assert.equal(packageJson.scripts["pack:local"], "npm pack");
   assert.equal(packageJson.scripts.prepack, "npm run build");
   assert.equal(packageJson.types, "./dist/index.d.ts");

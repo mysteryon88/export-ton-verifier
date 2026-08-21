@@ -3,15 +3,14 @@ import assert from "node:assert/strict";
 import fs from "fs/promises";
 import os from "os";
 import path from "path";
-import { execFileSync } from "child_process";
-import { fileURLToPath } from "url";
 import { utils } from "ffjavascript";
 import { getCurveFromName } from "../src/utils.js";
+import {
+  runCliInProcess,
+  runCliSuccess,
+} from "../test-support/run_cli.js";
 
 const { stringifyBigInts } = utils;
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const repoRoot = path.join(__dirname, "..");
-const cliPath = path.join(repoRoot, "src/cli.js");
 
 async function withTempDir(run) {
   const tempDir = await fs.mkdtemp(
@@ -44,26 +43,10 @@ async function writeGroth16JsonVk(filePath, curveName, nPublic = 1) {
   }
 }
 
-function runCli(args) {
-  return execFileSync(process.execPath, [cliPath, ...args], {
-    cwd: repoRoot,
-    stdio: "pipe",
-    encoding: "utf8",
-  });
-}
-
-function runCliFailure(args) {
-  try {
-    runCli(args);
-    throw new Error(`CLI unexpectedly succeeded: ${args.join(" ")}`);
-  } catch (err) {
-    if (err instanceof Error && !("status" in err)) throw err;
-    return {
-      status: err.status ?? 1,
-      stdout: String(err.stdout ?? ""),
-      stderr: String(err.stderr ?? ""),
-    };
-  }
+async function runCliFailure(args) {
+  const result = await runCliInProcess(args);
+  assert.notEqual(result.status, 0, `CLI unexpectedly succeeded: ${args.join(" ")}`);
+  return result;
 }
 
 test("doctor reports OK for a supported BLS Groth16 Tolk verifier", async () => {
@@ -71,7 +54,7 @@ test("doctor reports OK for a supported BLS Groth16 Tolk verifier", async () => 
     const inputPath = path.join(tempDir, "verification_key.json");
     await writeGroth16JsonVk(inputPath, "bls12381", 1);
 
-    const output = runCli(["doctor", inputPath, "--tolk"]);
+    const output = await runCliSuccess(["doctor", inputPath, "--tolk"]);
 
     assert.match(output, /Verifier doctor: OK/);
     assert.match(output, /Source format: snarkjs-json/);
@@ -87,7 +70,7 @@ test("doctor JSON blocks non-BLS TON verifier generation", async () => {
     const inputPath = path.join(tempDir, "verification_key.json");
     await writeGroth16JsonVk(inputPath, "bn128", 1);
 
-    const result = runCliFailure(["doctor", inputPath, "--json"]);
+    const result = await runCliFailure(["doctor", inputPath, "--json"]);
 
     assert.notEqual(result.status, 0);
     const report = JSON.parse(result.stdout);
@@ -108,7 +91,7 @@ test("doctor accepts flags before the input path", async () => {
     const inputPath = path.join(tempDir, "verification_key.json");
     await writeGroth16JsonVk(inputPath, "bls12381", 1);
 
-    const output = runCli(["doctor", "--json", inputPath]);
+    const output = await runCliSuccess(["doctor", "--json", inputPath]);
     const report = JSON.parse(output);
 
     assert.equal(report.ok, true);
@@ -136,7 +119,7 @@ test("doctor JSON blocks incomplete snarkjs verification keys", async () => {
       const inputPath = path.join(tempDir, `${item.name}.json`);
       await fs.writeFile(inputPath, JSON.stringify(item.value), "utf8");
 
-      const result = runCliFailure(["doctor", inputPath, "--json"]);
+      const result = await runCliFailure(["doctor", inputPath, "--json"]);
 
       assert.notEqual(result.status, 0);
       const report = JSON.parse(result.stdout);

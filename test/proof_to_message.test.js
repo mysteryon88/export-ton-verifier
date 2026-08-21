@@ -3,16 +3,12 @@ import assert from "node:assert/strict";
 import fs from "fs/promises";
 import os from "os";
 import path from "path";
-import { execFileSync } from "child_process";
-import { fileURLToPath } from "url";
 import { Cell } from "@ton/core";
 import { utils } from "ffjavascript";
 import { getCurveFromName } from "../src/utils.js";
+import { runCliSuccess } from "../test-support/run_cli.js";
 
 const { stringifyBigInts } = utils;
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const repoRoot = path.join(__dirname, "..");
-const cliPath = path.join(repoRoot, "src/cli.js");
 
 async function withTempDir(run) {
   const tempDir = await fs.mkdtemp(
@@ -153,22 +149,17 @@ test("proof-to-message CLI writes encoded BOC output", async () => {
     await fs.writeFile(proofPath, JSON.stringify(groth16), "utf8");
     await fs.writeFile(publicPath, JSON.stringify(publicSignals), "utf8");
 
-    execFileSync(
-      process.execPath,
-      [
-        cliPath,
-        "proof-to-message",
-        proofPath,
-        publicPath,
-        "--groth16",
-        "--func",
-        "--format",
-        "hex",
-        "--output",
-        outputPath,
-      ],
-      { cwd: repoRoot, stdio: "pipe" },
-    );
+    await runCliSuccess([
+      "proof-to-message",
+      proofPath,
+      publicPath,
+      "--groth16",
+      "--func",
+      "--format",
+      "hex",
+      "--output",
+      outputPath,
+    ]);
 
     const hex = await fs.readFile(outputPath, "utf8");
     assert.match(hex, /^[0-9a-f]+$/);
@@ -185,18 +176,13 @@ test("proof-to-message accepts protocol flags before proof paths", async () => {
     await fs.writeFile(proofPath, JSON.stringify(groth16), "utf8");
     await fs.writeFile(publicPath, JSON.stringify(publicSignals), "utf8");
 
-    const output = execFileSync(
-      process.execPath,
-      [
-        cliPath,
-        "proof-to-message",
-        "--groth16",
-        proofPath,
-        publicPath,
-        "--func",
-      ],
-      { cwd: repoRoot, stdio: "pipe", encoding: "utf8" },
-    );
+    const output = await runCliSuccess([
+      "proof-to-message",
+      "--groth16",
+      proofPath,
+      publicPath,
+      "--func",
+    ]);
 
     assert.equal(opcodeFromBase64(output.trim()), 0x3b3cca17);
   });

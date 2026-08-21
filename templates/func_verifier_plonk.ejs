@@ -37,7 +37,7 @@ const publicInputEvalLines = Array.from({ length: nPublic }, (_, i) => {
 #include "imports/stdlib.fc";
 
 const op::verify = 0x76524659;
-const int verifier::minVerifyValue = 50000000;
+const int verifier::minVerifyValue = 70000000;
 
 ;; ============================================
 ;; Compressed G1 points for BLS operations (48 bytes each)
@@ -140,7 +140,9 @@ int verifier::ff_inverse(int a, int q) inline {
 int verifier::read_arr(cell arr, int i) inline {
     (slice v, int ok) = arr.udict_get?(verifier::publicInputKeyLen, i);
     throw_unless(verifier::err::public_not_present, ok);
-    return v.preload_uint(256);
+    int value = v~load_uint(256);
+    throw_unless(verifier::err::scalar_not_in_field, v.slice_empty?());
+    return value;
 }
 
 (cell, ()) verifier::set_arr(cell arr, int i, int v) inline {
@@ -183,8 +185,286 @@ int addmod(int x, int y, int z) inline {
 }
 
 () verifier::check_proof_point(slice point) impure inline {
+    throw_unless(verifier::err::invalid_proof, slice_bits(point) == 384);
+    throw_unless(verifier::err::invalid_proof, slice_refs(point) == 0);
     throw_unless(verifier::err::invalid_proof, bls::g1_in_group(point));
     throw_if(verifier::err::invalid_proof, bls::g1_is_zero(point));
+}
+
+int verifier::less_than_six_limbs(
+    slice encoded,
+    int limb5, int limb4, int limb3, int limb2, int limb1, int limb0
+) inline {
+    int decided = 0;
+    int result = 0;
+    int value = encoded~load_uint(64);
+    if ((~ decided) & (value != limb5)) {
+        result = value < limb5;
+        decided = -1;
+    }
+    value = encoded~load_uint(64);
+    if ((~ decided) & (value != limb4)) {
+        result = value < limb4;
+        decided = -1;
+    }
+    value = encoded~load_uint(64);
+    if ((~ decided) & (value != limb3)) {
+        result = value < limb3;
+        decided = -1;
+    }
+    value = encoded~load_uint(64);
+    if ((~ decided) & (value != limb2)) {
+        result = value < limb2;
+        decided = -1;
+    }
+    value = encoded~load_uint(64);
+    if ((~ decided) & (value != limb1)) {
+        result = value < limb1;
+        decided = -1;
+    }
+    value = encoded~load_uint(64);
+    if ((~ decided) & (value != limb0)) {
+        result = value < limb0;
+        decided = -1;
+    }
+    throw_unless(verifier::err::invalid_proof, encoded.slice_empty?());
+    return result;
+}
+
+int verifier::less_than_base_field(slice encoded) inline {
+    return verifier::less_than_six_limbs(
+        encoded,
+        0x1a0111ea397fe69a, 0x4b1ba7b6434bacd7,
+        0x64774b84f38512bf, 0x6730d2a0f6b0f624,
+        0x1eabfffeb153ffff, 0xb9feffffffffaaab
+    );
+}
+
+int verifier::less_than_half_base_field(slice encoded) inline {
+    return verifier::less_than_six_limbs(
+        encoded,
+        0x0d0088f51cbff34d, 0x258dd3db21a5d66b,
+        0xb23ba5c279c2895f, 0xb39869507b587b12,
+        0x0f55ffff58a9ffff, 0xdcff7fffffffd556
+    );
+}
+
+int verifier::same_compressed_x(slice compressed, slice x) inline {
+    int first = compressed~load_uint(64);
+    int same = (first % 2305843009213693952) == x~load_uint(64);
+    int i = 0;
+    while (i < 5) {
+        if (compressed~load_uint(64) != x~load_uint(64)) {
+            same = 0;
+        }
+        i += 1;
+    }
+    throw_unless(verifier::err::invalid_proof, compressed.slice_empty?());
+    throw_unless(verifier::err::invalid_proof, x.slice_empty?());
+    return same;
+}
+
+int verifier::slice_is_zero(slice encoded, int n) inline {
+    int aggregate = 0;
+    int i = 0;
+    while (i < n) {
+        aggregate |= encoded~load_uint(64);
+        i += 1;
+    }
+    throw_unless(verifier::err::invalid_proof, encoded.slice_empty?());
+    return aggregate == 0;
+}
+
+int verifier::add_mod(int a, int b, int modulus) inline {
+    if (a >= modulus - b) {
+        return a - (modulus - b);
+    }
+    return a + b;
+}
+
+int verifier::slice_residue(slice encoded, int n, int modulus) inline {
+    int residue = 0;
+    int i = 0;
+    while (i < n) {
+        residue = verifier::add_mod(
+            mulmod(residue, 340282366920938463463374607431768211456, modulus),
+            encoded~load_uint(128),
+            modulus
+        );
+        i += 1;
+    }
+    throw_unless(verifier::err::invalid_proof, encoded.slice_empty?());
+    return residue;
+}
+
+() verifier::check_equation_mod(
+    slice x, slice y, slice quotient, int negative, int modulus, int p_modulus
+) impure inline {
+    int xr = verifier::slice_residue(x, 3, modulus);
+    int yr = verifier::slice_residue(y, 3, modulus);
+    int qr = verifier::slice_residue(quotient, 6, modulus);
+    int x3 = mulmod(mulmod(xr, xr, modulus), xr, modulus);
+    int y2 = mulmod(yr, yr, modulus);
+    int qp = mulmod(qr, p_modulus, modulus);
+    int lhs = verifier::add_mod(x3, 4, modulus);
+    if (negative) {
+        lhs = verifier::add_mod(lhs, qp, modulus);
+        throw_unless(verifier::err::invalid_proof, lhs == y2);
+    } else {
+        throw_unless(
+            verifier::err::invalid_proof,
+            lhs == verifier::add_mod(y2, qp, modulus)
+        );
+    }
+}
+
+int verifier::slice_residue_128(slice encoded, int n) inline {
+    int modulus = 340282366920938463463374607431768211455;
+    int residue = 0;
+    int i = 0;
+    while (i < n) {
+        int chunk = encoded~load_uint(128);
+        if (chunk == modulus) {
+            chunk = 0;
+        }
+        residue = verifier::add_mod(residue, chunk, modulus);
+        i += 1;
+    }
+    throw_unless(verifier::err::invalid_proof, encoded.slice_empty?());
+    return residue;
+}
+
+() verifier::check_equation_mod_128(
+    slice x, slice y, slice quotient, int negative
+) impure inline {
+    int modulus = 340282366920938463463374607431768211455;
+    int xr = verifier::slice_residue_128(x, 3);
+    int yr = verifier::slice_residue_128(y, 3);
+    int qr = verifier::slice_residue_128(quotient, 6);
+    int x3 = mulmod(mulmod(xr, xr, modulus), xr, modulus);
+    int y2 = mulmod(yr, yr, modulus);
+    int qp = mulmod(qr, 208877612993915134671969646143013146022, modulus);
+    int lhs = verifier::add_mod(x3, 4, modulus);
+    if (negative) {
+        lhs = verifier::add_mod(lhs, qp, modulus);
+        throw_unless(verifier::err::invalid_proof, lhs == y2);
+    } else {
+        throw_unless(
+            verifier::err::invalid_proof,
+            lhs == verifier::add_mod(y2, qp, modulus)
+        );
+    }
+}
+
+() verifier::check_curve_equation(
+    slice x, slice y, slice quotient, int negative
+) impure {
+    ;; The five pairwise-coprime moduli have a 1150-bit product. With canonical
+    ;; x,y < p and a 768-bit |q|, |x^3 + 4 - y^2 - q*p| is below 2^1150,
+    ;; so equality modulo all five is equivalent to exact integer equality.
+    verifier::check_equation_mod(
+        x, y, quotient, negative,
+        115792089237316195423570985008687907853269984665640564039457584007908834671663,
+        45442060874369865957053122457214185817766951338729763812469558174980632365874
+    );
+    verifier::check_equation_mod(
+        x, y, quotient, negative,
+        115792089210356248762697446949407573530086143415290314195533631308867097853951,
+        38110890092560713635066568006917044494578826803373145873585304601562188213582
+    );
+    verifier::check_equation_mod(
+        x, y, quotient, negative,
+        57896044618658097711785492504343953926634992332820282019728792003956564819949,
+        45442060874369865957053122457065728163911979137268805490623197713172086346389
+    );
+    verifier::check_equation_mod(
+        x, y, quotient, negative,
+        52435875175126190479447740508185965837690552500527637822603658699938581184513,
+        52435875175126190479447740508185965837690552500527637822588526323715639541761
+    );
+    verifier::check_equation_mod_128(x, y, quotient, negative);
+}
+
+;; Proves that the TVM compressed point and the snarkjs transcript coordinates
+;; describe the same canonical BLS12-381 G1 point.
+slice verifier::check_point_binding(slice compressed, slice transcript_point) impure {
+    throw_unless(verifier::err::invalid_proof, slice_bits(transcript_point) == 768);
+    throw_unless(verifier::err::invalid_proof, slice_refs(transcript_point) == 1);
+    slice coordinates = transcript_point~load_bits(768);
+    slice witness = transcript_point~load_ref().begin_parse();
+    throw_unless(verifier::err::invalid_proof, transcript_point.slice_empty?());
+    throw_unless(verifier::err::invalid_proof, slice_bits(witness) == 769);
+    throw_unless(verifier::err::invalid_proof, slice_refs(witness) == 0);
+    int negative = witness~load_uint(1);
+    slice quotient = witness~load_bits(768);
+    throw_unless(verifier::err::invalid_proof, witness.slice_empty?());
+    throw_if(
+        verifier::err::invalid_proof,
+        negative & verifier::slice_is_zero(quotient, 12)
+    );
+
+    slice coordinate_reader = coordinates;
+    slice x_encoded = coordinate_reader~load_bits(384);
+    slice y_encoded = coordinate_reader~load_bits(384);
+    throw_unless(verifier::err::invalid_proof, coordinate_reader.slice_empty?());
+    throw_unless(
+        verifier::err::invalid_proof,
+        verifier::less_than_base_field(x_encoded)
+    );
+    throw_unless(
+        verifier::err::invalid_proof,
+        verifier::less_than_base_field(y_encoded)
+    );
+
+    slice compressed_reader = compressed;
+    int first = compressed_reader~load_uint(64);
+    int top_byte = first / 72057594037927936;
+    int flags = (top_byte / 32) * 32;
+    throw_unless(verifier::err::invalid_proof, (flags == 0x80) | (flags == 0xa0));
+    throw_unless(
+        verifier::err::invalid_proof,
+        verifier::same_compressed_x(compressed, x_encoded)
+    );
+    int upper_y = ~ verifier::less_than_half_base_field(y_encoded);
+    throw_unless(verifier::err::invalid_proof, (flags == 0xa0) == upper_y);
+
+    verifier::check_curve_equation(x_encoded, y_encoded, quotient, negative);
+    return coordinates;
+}
+
+() verifier::validate_transcript_message(slice point) impure inline {
+    throw_unless(verifier::err::invalid_message, slice_bits(point) == 768);
+    throw_unless(verifier::err::invalid_message, slice_refs(point) == 1);
+    point~load_bits(768);
+    slice witness = point~load_ref().begin_parse();
+    throw_unless(verifier::err::invalid_message, point.slice_empty?());
+    throw_unless(verifier::err::invalid_message, slice_bits(witness) == 769);
+    throw_unless(verifier::err::invalid_message, slice_refs(witness) == 0);
+}
+
+() verifier::validate_public_message(cell public) impure {
+<% if (nPublic === 0) { -%>
+    slice empty_public = public.begin_parse();
+    throw_unless(verifier::err::invalid_message, empty_public.slice_empty?());
+<% } else { -%>
+    cell public_tmp = public;
+    int pi = 0;
+    try {
+        while (pi < verifier::nPublic) {
+            (slice value, int ok) = public_tmp~udict_delete_get?(
+                verifier::publicInputKeyLen,
+                pi
+            );
+            throw_unless(verifier::err::invalid_message, ok);
+            throw_unless(verifier::err::invalid_message, slice_bits(value) == 256);
+            throw_unless(verifier::err::invalid_message, slice_refs(value) == 0);
+            pi += 1;
+        }
+        throw_unless(verifier::err::invalid_message, null?(public_tmp));
+    } catch (_, int error_code) {
+        throw(verifier::err::invalid_message);
+    }
+<% } -%>
 }
 
 ;; Main verify function
@@ -208,6 +488,16 @@ int verify(
     verifier::check_proof_point(T3);
     verifier::check_proof_point(Wxi);
     verifier::check_proof_point(Wxiw);
+
+    A_uc = verifier::check_point_binding(A, A_uc);
+    B_uc = verifier::check_point_binding(B, B_uc);
+    C_uc = verifier::check_point_binding(C, C_uc);
+    Z_uc = verifier::check_point_binding(Z, Z_uc);
+    T1_uc = verifier::check_point_binding(T1, T1_uc);
+    T2_uc = verifier::check_point_binding(T2, T2_uc);
+    T3_uc = verifier::check_point_binding(T3, T3_uc);
+    Wxi_uc = verifier::check_point_binding(Wxi, Wxi_uc);
+    Wxiw_uc = verifier::check_point_binding(Wxiw, Wxiw_uc);
 
     verifier::check_field(eval_a);
     verifier::check_field(eval_b);
@@ -235,14 +525,21 @@ int verify(
 
     ;; Add public signals (as 32-byte big-endian scalars)
     int pi = 0;
+<% if (nPublic === 0) { -%>
+    throw_unless(verifier::err::too_many_publics, public.begin_parse().slice_empty?());
+<% } else { -%>
     cell public_tmp = public;
     while (pi < verifier::nPublic) {
         (slice v, int ok) = public_tmp~udict_delete_get?(verifier::publicInputKeyLen, pi);
         throw_unless(verifier::err::public_not_present, ok);
+        int public_input = v~load_uint(256);
+        throw_unless(verifier::err::scalar_not_in_field, v.slice_empty?());
+        verifier::check_field(public_input);
         pi += 1;
-        beta_hash~tpush(v);
+        beta_hash~tpush(verifier::scalar_to_slice(public_input));
     }
     throw_unless(verifier::err::too_many_publics, null?(public_tmp));
+<% } -%>
 
     beta_hash~tpush(A_uc);
     beta_hash~tpush(B_uc);
@@ -425,20 +722,39 @@ int verify(
 }
 
 (int) verifier::verify_proof_message(slice in_msg_body) impure {
+    throw_unless(verifier::err::invalid_message, slice_bits(in_msg_body) == 0);
+    throw_unless(verifier::err::invalid_message, slice_refs(in_msg_body) == 1);
     slice payload = in_msg_body~load_ref().begin_parse();
     throw_unless(verifier::err::invalid_message, in_msg_body.slice_empty?());
+    throw_unless(verifier::err::invalid_message, slice_bits(payload) == 0);
+    throw_unless(verifier::err::invalid_message, slice_refs(payload) == 4);
 
     slice compressed = payload~load_ref().begin_parse();
     slice evaluations = payload~load_ref().begin_parse();
     cell public = payload~load_ref();
     slice uncompressed = payload~load_ref().begin_parse();
     throw_unless(verifier::err::invalid_message, payload.slice_empty?());
+    throw_unless(verifier::err::invalid_message, slice_bits(compressed) == 0);
+    throw_unless(verifier::err::invalid_message, slice_refs(compressed) == 4);
+    throw_unless(verifier::err::invalid_message, slice_bits(evaluations) == 0);
+    throw_unless(verifier::err::invalid_message, slice_refs(evaluations) == 2);
+    throw_unless(verifier::err::invalid_message, slice_bits(uncompressed) == 0);
+    throw_unless(verifier::err::invalid_message, slice_refs(uncompressed) == 4);
+    verifier::validate_public_message(public);
 
     slice ab = compressed~load_ref().begin_parse();
     slice cz = compressed~load_ref().begin_parse();
     slice t12 = compressed~load_ref().begin_parse();
     slice compressed_tail = compressed~load_ref().begin_parse();
     throw_unless(verifier::err::invalid_message, compressed.slice_empty?());
+    throw_unless(verifier::err::invalid_message, slice_bits(ab) == 768);
+    throw_unless(verifier::err::invalid_message, slice_refs(ab) == 0);
+    throw_unless(verifier::err::invalid_message, slice_bits(cz) == 768);
+    throw_unless(verifier::err::invalid_message, slice_refs(cz) == 0);
+    throw_unless(verifier::err::invalid_message, slice_bits(t12) == 768);
+    throw_unless(verifier::err::invalid_message, slice_refs(t12) == 0);
+    throw_unless(verifier::err::invalid_message, slice_bits(compressed_tail) == 0);
+    throw_unless(verifier::err::invalid_message, slice_refs(compressed_tail) == 2);
 
     slice A = ab~load_bits(384);
     slice B = ab~load_bits(384);
@@ -453,6 +769,10 @@ int verify(
     slice t3_wxi = compressed_tail~load_ref().begin_parse();
     slice wxiw_cell = compressed_tail~load_ref().begin_parse();
     throw_unless(verifier::err::invalid_message, compressed_tail.slice_empty?());
+    throw_unless(verifier::err::invalid_message, slice_bits(t3_wxi) == 768);
+    throw_unless(verifier::err::invalid_message, slice_refs(t3_wxi) == 0);
+    throw_unless(verifier::err::invalid_message, slice_bits(wxiw_cell) == 384);
+    throw_unless(verifier::err::invalid_message, slice_refs(wxiw_cell) == 0);
     slice T3 = t3_wxi~load_bits(384);
     slice Wxi = t3_wxi~load_bits(384);
     throw_unless(verifier::err::invalid_message, t3_wxi.slice_empty?());
@@ -462,6 +782,10 @@ int verify(
     slice abc = evaluations~load_ref().begin_parse();
     slice rest = evaluations~load_ref().begin_parse();
     throw_unless(verifier::err::invalid_message, evaluations.slice_empty?());
+    throw_unless(verifier::err::invalid_message, slice_bits(abc) == 768);
+    throw_unless(verifier::err::invalid_message, slice_refs(abc) == 0);
+    throw_unless(verifier::err::invalid_message, slice_bits(rest) == 768);
+    throw_unless(verifier::err::invalid_message, slice_refs(rest) == 0);
     int eval_a = abc~load_uint(256);
     int eval_b = abc~load_uint(256);
     int eval_c = abc~load_uint(256);
@@ -476,35 +800,57 @@ int verify(
     slice C_uc_cell = uncompressed~load_ref().begin_parse();
     slice uncompressed_tail = uncompressed~load_ref().begin_parse();
     throw_unless(verifier::err::invalid_message, uncompressed.slice_empty?());
-    slice A_uc = A_uc_cell~load_bits(768);
-    slice B_uc = B_uc_cell~load_bits(768);
-    slice C_uc = C_uc_cell~load_bits(768);
-    throw_unless(verifier::err::invalid_message, A_uc_cell.slice_empty?());
-    throw_unless(verifier::err::invalid_message, B_uc_cell.slice_empty?());
-    throw_unless(verifier::err::invalid_message, C_uc_cell.slice_empty?());
+    throw_unless(verifier::err::invalid_message, slice_bits(uncompressed_tail) == 0);
+    throw_unless(verifier::err::invalid_message, slice_refs(uncompressed_tail) == 4);
+    throw_unless(verifier::err::invalid_message, slice_bits(A_uc_cell) == 768);
+    throw_unless(verifier::err::invalid_message, slice_refs(A_uc_cell) == 1);
+    throw_unless(verifier::err::invalid_message, slice_bits(B_uc_cell) == 768);
+    throw_unless(verifier::err::invalid_message, slice_refs(B_uc_cell) == 1);
+    throw_unless(verifier::err::invalid_message, slice_bits(C_uc_cell) == 768);
+    throw_unless(verifier::err::invalid_message, slice_refs(C_uc_cell) == 1);
+    verifier::validate_transcript_message(A_uc_cell);
+    verifier::validate_transcript_message(B_uc_cell);
+    verifier::validate_transcript_message(C_uc_cell);
+    slice A_uc = A_uc_cell;
+    slice B_uc = B_uc_cell;
+    slice C_uc = C_uc_cell;
 
     slice Z_uc_cell = uncompressed_tail~load_ref().begin_parse();
     slice T1_uc_cell = uncompressed_tail~load_ref().begin_parse();
     slice T2_uc_cell = uncompressed_tail~load_ref().begin_parse();
     slice uncompressed_tail2 = uncompressed_tail~load_ref().begin_parse();
     throw_unless(verifier::err::invalid_message, uncompressed_tail.slice_empty?());
-    slice Z_uc = Z_uc_cell~load_bits(768);
-    slice T1_uc = T1_uc_cell~load_bits(768);
-    slice T2_uc = T2_uc_cell~load_bits(768);
-    throw_unless(verifier::err::invalid_message, Z_uc_cell.slice_empty?());
-    throw_unless(verifier::err::invalid_message, T1_uc_cell.slice_empty?());
-    throw_unless(verifier::err::invalid_message, T2_uc_cell.slice_empty?());
+    throw_unless(verifier::err::invalid_message, slice_bits(uncompressed_tail2) == 0);
+    throw_unless(verifier::err::invalid_message, slice_refs(uncompressed_tail2) == 3);
+    throw_unless(verifier::err::invalid_message, slice_bits(Z_uc_cell) == 768);
+    throw_unless(verifier::err::invalid_message, slice_refs(Z_uc_cell) == 1);
+    throw_unless(verifier::err::invalid_message, slice_bits(T1_uc_cell) == 768);
+    throw_unless(verifier::err::invalid_message, slice_refs(T1_uc_cell) == 1);
+    throw_unless(verifier::err::invalid_message, slice_bits(T2_uc_cell) == 768);
+    throw_unless(verifier::err::invalid_message, slice_refs(T2_uc_cell) == 1);
+    verifier::validate_transcript_message(Z_uc_cell);
+    verifier::validate_transcript_message(T1_uc_cell);
+    verifier::validate_transcript_message(T2_uc_cell);
+    slice Z_uc = Z_uc_cell;
+    slice T1_uc = T1_uc_cell;
+    slice T2_uc = T2_uc_cell;
 
     slice T3_uc_cell = uncompressed_tail2~load_ref().begin_parse();
     slice Wxi_uc_cell = uncompressed_tail2~load_ref().begin_parse();
     slice Wxiw_uc_cell = uncompressed_tail2~load_ref().begin_parse();
     throw_unless(verifier::err::invalid_message, uncompressed_tail2.slice_empty?());
-    slice T3_uc = T3_uc_cell~load_bits(768);
-    slice Wxi_uc = Wxi_uc_cell~load_bits(768);
-    slice Wxiw_uc = Wxiw_uc_cell~load_bits(768);
-    throw_unless(verifier::err::invalid_message, T3_uc_cell.slice_empty?());
-    throw_unless(verifier::err::invalid_message, Wxi_uc_cell.slice_empty?());
-    throw_unless(verifier::err::invalid_message, Wxiw_uc_cell.slice_empty?());
+    throw_unless(verifier::err::invalid_message, slice_bits(T3_uc_cell) == 768);
+    throw_unless(verifier::err::invalid_message, slice_refs(T3_uc_cell) == 1);
+    throw_unless(verifier::err::invalid_message, slice_bits(Wxi_uc_cell) == 768);
+    throw_unless(verifier::err::invalid_message, slice_refs(Wxi_uc_cell) == 1);
+    throw_unless(verifier::err::invalid_message, slice_bits(Wxiw_uc_cell) == 768);
+    throw_unless(verifier::err::invalid_message, slice_refs(Wxiw_uc_cell) == 1);
+    verifier::validate_transcript_message(T3_uc_cell);
+    verifier::validate_transcript_message(Wxi_uc_cell);
+    verifier::validate_transcript_message(Wxiw_uc_cell);
+    slice T3_uc = T3_uc_cell;
+    slice Wxi_uc = Wxi_uc_cell;
+    slice Wxiw_uc = Wxiw_uc_cell;
 
     int ok = verify(
         A, B, C, Z, T1, T2, T3,
@@ -525,6 +871,10 @@ int verify(
     if (flags & 1) {
         return ();
     }
+    throw_unless(
+        verifier::err::invalid_message,
+        slice_bits(in_msg_body) >= 32
+    );
     int op = in_msg_body~load_uint(32);
 
     if (op == op::verify) {

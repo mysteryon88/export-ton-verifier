@@ -32,6 +32,7 @@ import {
   exportPlonkTolkCalldata,
   calldataToTupleItems,
   inspectVerifierInput,
+  proofToMessageCell,
   proofToMessageBoc,
   MAX_PLONK_PUBLIC_INPUTS,
 } from "export-ton-verifier";
@@ -40,7 +41,22 @@ import {
 `exportPlonkFuncCalldata` returns the legacy Func-compatible calldata where public inputs are a dictionary cell. `exportPlonkTolkCalldata` returns the Tolk getter-compatible calldata where public inputs are already a tuple.
 `inspectVerifierInput` powers the `doctor` command and reports format, protocol, curve, public input count, template availability, and TVM limit checks.
 `proofToMessageBoc` converts proof/public-signal JSON into a base64 or hex BOC internal message body for supported generated verifier templates.
-PLONK verifier generation supports at most `MAX_PLONK_PUBLIC_INPUTS` public inputs because the TVM Keccak transcript helper is limited to 255 tuple items.
+PLONK verifier generation supports at most `MAX_PLONK_PUBLIC_INPUTS` (currently 8) public inputs. This common FunC/Tolk limit keeps the measured full internal-message pairing boundary below 920,000 gas and reserves at least 8% under TVM's 1,000,000 transaction gas ceiling.
+
+### PLONK point binding and message ABI
+
+PLONK proof points have two representations: 48-byte compressed BLS12-381 points consumed by TVM BLS opcodes and 96-byte `x || y` coordinates consumed by the snarkjs Fiat-Shamir transcript. Generated FunC and Tolk verifiers bind every pair on-chain. They require canonical coordinates, a canonical non-identity prime-order compressed point, the same `x` and sign bit, and an exact signed curve-equation quotient witness. The contract checks the bounded integer equation with five pairwise-coprime CRT moduli; their product is larger than twice the maximum possible difference, so this is an exact check rather than a probabilistic one. Wrapper and calldata helpers perform the full equation check with `BigInt` before encoding.
+
+The PLONK internal-message opcode is `0x76524659`. The root contains only the 32-bit opcode and one payload reference. The payload contains compressed points, six evaluations, public signals, and the nine transcript-point cells. FunC public signals use the existing 32-bit-key dictionary cell; Tolk public signals use `array<uint256>`. `proofToMessageCell` and `proofToMessageBoc` produce this same layout, and the generated TypeScript wrappers use it in `sendVerify`.
+
+Both receivers require at least `0.07 TON`, which provides the protocol gas credit needed at the supported public-input limit. Malformed, truncated, or trailing message structure exits with `105`; a well-formed but invalid proof or mismatched point representation exits with `106`; a scalar outside `[0, r)` exits with `103`. The getter keeps the existing 25-item calldata interface and returns `false` for a well-formed cryptographically invalid proof.
+
+The opt-in real-proof regression test expects an artifact directory containing `condition_js/condition.wasm`, `condition_0000.zkey`, and its matching `verification_key.json`:
+
+```powershell
+$env:PLONK_E2E_DIR = "C:\path\to\condition-artifacts"
+npm test
+```
 
 ## Usage CLI
 

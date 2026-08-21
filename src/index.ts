@@ -89,7 +89,7 @@ export interface ProofToMessageBocOptions extends ProofToMessageOptions {
   format?: BocFormat;
 }
 
-export const MAX_PLONK_PUBLIC_INPUTS = MAX_PLONK_PUBLIC_INPUTS_IMPL as 244;
+export const MAX_PLONK_PUBLIC_INPUTS = MAX_PLONK_PUBLIC_INPUTS_IMPL as 8;
 
 export const dictFromInputList: (
   list: bigint[],

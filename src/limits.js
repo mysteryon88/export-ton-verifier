@@ -18,7 +18,9 @@ export function assertTonBlsCurve(raw, field = "curve") {
   normalizeTonBlsCurveName(raw, field);
 }
 
-export const MAX_PLONK_PUBLIC_INPUTS = 244;
+// Eight inputs keep both generated receivers below 920k gas across the
+// boundary matrix, leaving at least 8% under TVM's 1M transaction gas ceiling.
+export const MAX_PLONK_PUBLIC_INPUTS = 8;
 export const MAX_PLONK_POWER = 32;
 export const MAX_VERIFICATION_KEY_BYTES = 16 * 1024 * 1024;
 export const MAX_JSON_DEPTH = 64;
@@ -34,7 +36,7 @@ export function assertPlonkPublicInputCount(count, field = "public inputs") {
 
   if (count > MAX_PLONK_PUBLIC_INPUTS) {
     throw new Error(
-      `${field}: PLONK verifier supports at most ${MAX_PLONK_PUBLIC_INPUTS} public inputs because the TVM Keccak transcript is limited to 255 tuple items.`,
+      `${field}: PLONK verifier supports at most ${MAX_PLONK_PUBLIC_INPUTS} public inputs within the TVM internal-message gas limit.`,
     );
   }
 }

@@ -13,8 +13,8 @@
 
     snarkJS is distributed in the hope that it will be useful, but WITHOUT
     ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
-    or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public
-    License for more details.
+    or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License
+    for more details.
 
     You should have received a copy of the GNU General Public License
     along with snarkJS. If not, see <https://www.gnu.org/licenses/>.
@@ -42,7 +42,16 @@ import {
 const { stringifyBigInts, unstringifyBigInts } = utils;
 
 const G1_KEYS = ["Qm", "Ql", "Qr", "Qo", "Qc", "S1", "S2", "S3"];
-const G1_UC_KEYS = ["Qm_uc", "Ql_uc", "Qr_uc", "Qo_uc", "Qc_uc", "S1_uc", "S2_uc", "S3_uc"];
+const G1_UC_KEYS = [
+  "Qm_uc",
+  "Ql_uc",
+  "Qr_uc",
+  "Qo_uc",
+  "Qc_uc",
+  "S1_uc",
+  "S2_uc",
+  "S3_uc",
+];
 
 export default async function zkeyExportPlonkVerificationKey(zkeyName) {
   await assertZkeyFieldWidths(zkeyName);
@@ -72,9 +81,28 @@ export async function normalizePlonkVerificationKey(vkRaw) {
   const curve = await getCurveFromName(vkRaw.curve);
 
   try {
+    const k1 = scalarToString(curve, vkRaw.k1, "k1");
+    const k2 = scalarToString(curve, vkRaw.k2, "k2");
+    const w = canonicalRootOfUnityToString(curve, power, vkRaw.w);
     if (isTemplateReadyPlonkVerificationKey(vkRaw)) {
-      validateTemplateReadyPlonkVerificationKey(curve, vkRaw);
-      return stringifyBigInts({ ...vkRaw, nPublic, power });
+      const points = validateTemplateReadyPlonkVerificationKey(curve, vkRaw);
+      const res = {
+        protocol: "plonk",
+        curve: curve.name,
+        nPublic,
+        power,
+        k1,
+        k2,
+        w,
+        X_2: pointToBlstCHex(curve.G2, points.X_2),
+      };
+
+      for (const key of G1_KEYS) {
+        res[key] = pointToBlstCHex(curve.G1, points[key]);
+        res[`${key}_uc`] = pointToUncompressedHex(curve.G1, points[key]);
+      }
+
+      return stringifyBigInts(res);
     }
 
     const x2 = parseBls12381Point(
@@ -89,12 +117,9 @@ export async function normalizePlonkVerificationKey(vkRaw) {
       curve: curve.name,
       nPublic,
       power,
-      k1: scalarToString(curve, vk.k1, "k1"),
-      k2: scalarToString(curve, vk.k2, "k2"),
-      w:
-        vk.w === undefined
-          ? scalarToString(curve, curve.Fr.w[power], "w")
-          : scalarToString(curve, vk.w, "w"),
+      k1,
+      k2,
+      w,
       X_2: pointToBlstCHex(curve.G2, x2),
     };
 
@@ -126,6 +151,8 @@ function isTemplateReadyPlonkVerificationKey(vkRaw) {
 }
 
 function validateTemplateReadyPlonkVerificationKey(curve, vkRaw) {
+  const points = {};
+
   for (const key of G1_KEYS) {
     const compressed = curve.G1.fromObject(
       decodeBls12381G1(
@@ -146,6 +173,7 @@ function validateTemplateReadyPlonkVerificationKey(curve, vkRaw) {
         `verification_key.${key}: compressed and uncompressed encodings must describe the same point.`,
       );
     }
+    points[key] = compressed;
   }
 
   const x2 = curve.G2.fromObject(
@@ -158,11 +186,23 @@ function validateTemplateReadyPlonkVerificationKey(curve, vkRaw) {
   assertBls12381Point(curve.G2, curve.r, x2, "verification_key.X_2", {
     allowIdentity: false,
   });
+  points.X_2 = x2;
+
+  return points;
 }
 
 function numberField(vkRaw, key) {
-  const value = Number(vkRaw[key]);
-  if (!Number.isSafeInteger(value) || value < 0) {
+  const raw = vkRaw[key];
+  let value;
+  if (typeof raw === "number" && Number.isSafeInteger(raw) && raw >= 0) {
+    value = raw;
+  } else if (typeof raw === "bigint" && raw >= 0n && raw <= BigInt(Number.MAX_SAFE_INTEGER)) {
+    value = Number(raw);
+  } else if (typeof raw === "string" && /^[0-9]+$/.test(raw)) {
+    const parsed = BigInt(raw);
+    if (parsed <= BigInt(Number.MAX_SAFE_INTEGER)) value = Number(parsed);
+  }
+  if (value === undefined) {
     throw new Error(`verification_key: invalid '${key}'.`);
   }
   return value;
@@ -172,7 +212,47 @@ function scalarToString(curve, value, key) {
   if (value === undefined || value === null) {
     throw new Error(`verification_key: missing '${key}'.`);
   }
-  return curve.Fr.toObject(curve.Fr.fromObject(value)).toString();
+
+  let scalar;
+  if (typeof value === "bigint") {
+    scalar = value;
+  } else if (typeof value === "number" && Number.isSafeInteger(value)) {
+    scalar = BigInt(value);
+  } else if (typeof value === "string" && /^[0-9]+$/.test(value)) {
+    scalar = BigInt(value);
+  } else {
+    throw new Error(
+      `verification_key.${key}: expected a non-negative integer field element.`,
+    );
+  }
+
+  if (scalar < 0n || scalar >= curve.r) {
+    throw new Error(
+      `verification_key.${key}: field element must be in the range [0, r).`,
+    );
+  }
+
+  return scalar.toString();
+}
+
+function rootOfUnityToString(curve, power) {
+  const root = curve.Fr.w[power];
+  if (root === undefined) {
+    throw new Error(`verification_key.w: no root of unity for power ${power}.`);
+  }
+  return curve.Fr.toObject(root).toString();
+}
+
+function canonicalRootOfUnityToString(curve, power, supplied) {
+  const canonical = rootOfUnityToString(curve, power);
+  if (supplied === undefined) return canonical;
+  const value = scalarToString(curve, supplied, "w");
+  if (value !== canonical) {
+    throw new Error(
+      `verification_key.w: expected the canonical 2^${power}-th root of unity.`,
+    );
+  }
+  return canonical;
 }
 
 function ffC2blstC(a, offset = 0) {

@@ -91,7 +91,6 @@ function readyPlonkVk({ g1, g2, g1Uc }) {
     power: 4,
     k1: "2",
     k2: "3",
-    w: "13",
     Qm: g1,
     Ql: g1,
     Qr: g1,
@@ -193,11 +192,11 @@ test("all expensive internal receivers enforce the minimum attached value", asyn
   assert.match(tactGroth16, /MIN_VERIFY_VALUE: Int = 50000000/);
   assert.match(tactGroth16, /context\(\)\.value >= MIN_VERIFY_VALUE/);
 
-  assert.match(funcPlonk, /minVerifyValue = 50000000/);
+  assert.match(funcPlonk, /minVerifyValue = 70000000/);
   assert.match(funcPlonk, /recv_internal\(int msg_value,/);
   assert.match(funcPlonk, /msg_value >= verifier::minVerifyValue/);
 
-  assert.match(tolkPlonk, /MIN_VERIFY_VALUE: coins = 50000000/);
+  assert.match(tolkPlonk, /MIN_VERIFY_VALUE: coins = 70000000/);
   assert.match(tolkPlonk, /inMsg\.valueCoins >= MIN_VERIFY_VALUE/);
 });
 
@@ -344,6 +343,61 @@ test("template-ready PLONK VK rejects mismatched compressed and uncompressed poi
       normalizePlonkVerificationKey(vk),
       /Qm.*same point/,
     );
+  } finally {
+    await curve.terminate();
+  }
+});
+
+test("PLONK VK normalization rejects coercive metadata and canonicalizes output", async () => {
+  const curve = await getCurveFromName("bls12381");
+  try {
+    const g1 = curve.G1.toObject(curve.G1.g);
+    const g2 = curve.G2.toObject(curve.G2.g);
+    const base = stringifyBigInts({
+      protocol: "plonk",
+      curve: "bls12381",
+      nPublic: 1,
+      power: 4,
+      k1: 2n,
+      k2: 3n,
+      Qm: g1,
+      Ql: g1,
+      Qr: g1,
+      Qo: g1,
+      Qc: g1,
+      S1: g1,
+      S2: g1,
+      S3: g1,
+      X_2: g2,
+      untrusted: "must not survive",
+    });
+
+    for (const value of [true, [], "", " 1", "1 ", "0x1", "1e0", -1]) {
+      await assert.rejects(
+        normalizePlonkVerificationKey({ ...base, nPublic: value }),
+        /invalid 'nPublic'/,
+      );
+    }
+    for (const value of [true, [], "", " 2", "2 ", "0x2", "2e0", -1]) {
+      await assert.rejects(
+        normalizePlonkVerificationKey({ ...base, k1: value }),
+        /k1.*(non-negative integer field element|\[0, r\))/,
+      );
+    }
+    await assert.rejects(
+      normalizePlonkVerificationKey({ ...base, k1: curve.r.toString() }),
+      /k1.*\[0, r\)/,
+    );
+    await assert.rejects(
+      normalizePlonkVerificationKey({ ...base, w: "13" }),
+      /canonical.*root of unity/,
+    );
+
+    const normalized = await normalizePlonkVerificationKey(base);
+    assert.equal(normalized.untrusted, undefined);
+    assert.equal(normalized.w, curve.Fr.toObject(curve.Fr.w[4]).toString());
+    assert.equal(normalized.Qm, g1Compressed(curve, g1));
+    assert.equal(normalized.Qm_uc, await uncompressedG1Hex(curve, g1));
   } finally {
     await curve.terminate();
   }

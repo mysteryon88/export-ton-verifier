@@ -3,12 +3,11 @@ import assert from "node:assert/strict";
 import fs from "fs/promises";
 import os from "os";
 import path from "path";
-import { execFileSync } from "child_process";
 import { fileURLToPath } from "url";
+import { runCliInProcess } from "../test-support/run_cli.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.join(__dirname, "..");
-const cliPath = path.join(repoRoot, "src/cli.js");
 const templatesDir = path.join(repoRoot, "templates");
 
 async function readTemplate(name) {
@@ -26,12 +25,16 @@ async function withTempDir(run) {
   }
 }
 
-function importWrapper(destPath, args) {
-  execFileSync(
-    process.execPath,
-    [cliPath, "import-wrapper", destPath, ...args, "--force"],
-    { cwd: repoRoot, stdio: "pipe" },
-  );
+async function importWrapper(destPath, args) {
+  const result = await runCliInProcess([
+    "import-wrapper",
+    destPath,
+    ...args,
+    "--force",
+  ]);
+  if (result.status !== 0) {
+    throw new Error(result.stderr || result.stdout);
+  }
 }
 
 test("import-wrapper copies Func and Tolk Groth16 wrappers separately, with Tolk as the default", async () => {
@@ -40,9 +43,9 @@ test("import-wrapper copies Func and Tolk Groth16 wrappers separately, with Tolk
     const tolkDest = path.join(tempDir, "tolk.ts");
     const defaultDest = path.join(tempDir, "default.ts");
 
-    importWrapper(funcDest, ["--groth16", "--func"]);
-    importWrapper(tolkDest, ["--groth16", "--tolk"]);
-    importWrapper(defaultDest, ["--groth16"]);
+    await importWrapper(funcDest, ["--groth16", "--func"]);
+    await importWrapper(tolkDest, ["--groth16", "--tolk"]);
+    await importWrapper(defaultDest, ["--groth16"]);
 
     const [funcWrapper, tolkWrapper, defaultWrapper] = await Promise.all([
       fs.readFile(funcDest, "utf8"),
@@ -71,7 +74,7 @@ test("import-wrapper copies Func and Tolk Groth16 wrappers separately, with Tolk
 test("import-wrapper defaults PLONK wrapper selection to the Tolk PLONK wrapper", async () => {
   await withTempDir(async (tempDir) => {
     const destPath = path.join(tempDir, "plonk.ts");
-    importWrapper(destPath, ["--plonk"]);
+    await importWrapper(destPath, ["--plonk"]);
 
     const [copied, expected] = await Promise.all([
       fs.readFile(destPath, "utf8"),
@@ -86,11 +89,7 @@ test("import-wrapper accepts protocol flags before the destination path", async 
   await withTempDir(async (tempDir) => {
     const destPath = path.join(tempDir, "Verifier.ts");
 
-    execFileSync(
-      process.execPath,
-      [cliPath, "import-wrapper", "--groth16", destPath, "--force"],
-      { cwd: repoRoot, stdio: "pipe" },
-    );
+    await importWrapper(destPath, ["--groth16"]);
 
     const [copied, expected] = await Promise.all([
       fs.readFile(destPath, "utf8"),
@@ -104,7 +103,7 @@ test("import-wrapper accepts protocol flags before the destination path", async 
 test("import-wrapper treats trailing slash destinations as directories", async () => {
   await withTempDir(async (tempDir) => {
     const destDir = path.join(tempDir, "wrappers");
-    importWrapper(`${destDir}${path.sep}`, ["--groth16"]);
+    await importWrapper(`${destDir}${path.sep}`, ["--groth16"]);
 
     const [copied, expected] = await Promise.all([
       fs.readFile(path.join(destDir, "Verifier.ts"), "utf8"),
@@ -120,7 +119,7 @@ test("import-wrapper treats trailing slash destinations as directories", async (
 test("import-wrapper copies the Func-specific PLONK wrapper for Func", async () => {
   await withTempDir(async (tempDir) => {
     const destPath = path.join(tempDir, "plonk-func.ts");
-    importWrapper(destPath, ["--plonk", "--func"]);
+    await importWrapper(destPath, ["--plonk", "--func"]);
 
     const [copied, expected] = await Promise.all([
       fs.readFile(destPath, "utf8"),
@@ -157,8 +156,8 @@ test("import-wrapper rejects Tact wrappers", async () => {
   await withTempDir(async (tempDir) => {
     const destPath = path.join(tempDir, "tact.ts");
 
-    assert.throws(
-      () => importWrapper(destPath, ["--groth16", "--tact"]),
+    await assert.rejects(
+      importWrapper(destPath, ["--groth16", "--tact"]),
       /TypeScript wrappers are not available for Tact/,
     );
   });

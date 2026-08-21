@@ -52,6 +52,7 @@ async function writePlonkJsonVk(filePath, nPublic = 1) {
   try {
     const g1 = curve.G1.toObject(curve.G1.g);
     const g2 = curve.G2.toObject(curve.G2.g);
+    const w = curve.Fr.toObject(curve.Fr.w[4]);
     const vk = stringifyBigInts({
       protocol: "plonk",
       curve: "bls12381",
@@ -68,10 +69,11 @@ async function writePlonkJsonVk(filePath, nPublic = 1) {
       S2: g1,
       S3: g1,
       X_2: g2,
-      w: 13n,
+      w,
     });
 
     await fs.writeFile(filePath, JSON.stringify(vk), "utf8");
+    return w;
   } finally {
     await curve.terminate();
   }
@@ -191,7 +193,7 @@ test("generateVerifier renders the Tolk PLONK template from verification_key.jso
     const inputPath = path.join(tempDir, "verification_key.json");
     const outputPath = path.join(tempDir, "verifier.tolk");
 
-    await writePlonkJsonVk(inputPath, 1);
+    const w = await writePlonkJsonVk(inputPath, 1);
 
     const originalLog = console.log;
     let protocol;
@@ -214,7 +216,10 @@ test("generateVerifier renders the Tolk PLONK template from verification_key.jso
     assert.match(rendered, /const X_2: slice = "[0-9a-f]{192}"\.hexToSlice\(\)/);
     assert.match(rendered, /const K1: int = 2/);
     assert.match(rendered, /const K2: int = 3/);
-    assert.match(rendered, /const W1: int = 13/);
+    assert.match(
+      rendered,
+      new RegExp(`const W1: int = ${w}`),
+    );
     assert.match(rendered, /const N_PUBLIC: int = 1/);
     assert.doesNotMatch(rendered, /\[object Object\]/);
   });

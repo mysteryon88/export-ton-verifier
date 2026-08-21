@@ -1,14 +1,26 @@
-import test from "node:test";
+import test, { after } from "node:test";
 import assert from "node:assert/strict";
 import fs from "fs/promises";
 import path from "path";
 import { pathToFileURL, fileURLToPath } from "url";
 import ts from "typescript";
 import { Address, beginCell } from "@ton/core";
+import { getCurveFromName } from "../src/utils.js";
+import { encodePlonkG1Point } from "../src/plonkEncoding.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.join(__dirname, "..");
 const templatesDir = path.join(repoRoot, "templates");
+const wrapperCurve = await getCurveFromName("bls12381");
+const wrapperPoint = encodePlonkG1Point(
+  wrapperCurve,
+  wrapperCurve.G1.toObject(wrapperCurve.G1.g),
+  "wrapper fixture",
+);
+const wrapperCompressedCell = beginCell()
+  .storeBuffer(wrapperPoint.compressed)
+  .endCell();
+after(async () => wrapperCurve.terminate());
 
 async function withRepoTempDir(run) {
   const tempDir = path.join(
@@ -95,37 +107,35 @@ function decodeSerializedUint256Array(slice) {
 }
 
 function makeTolkPlonkArgs(publicInputs = [11n, 22n, 33n, 44n]) {
-  const point = (byte, size) =>
-    beginCell().storeBuffer(Buffer.alloc(size, byte)).endCell();
   const args = [
-    { type: "slice", cell: point(0x01, 48) },
-    { type: "slice", cell: point(0x02, 48) },
-    { type: "slice", cell: point(0x03, 48) },
-    { type: "slice", cell: point(0x04, 48) },
-    { type: "slice", cell: point(0x05, 48) },
-    { type: "slice", cell: point(0x06, 48) },
-    { type: "slice", cell: point(0x07, 48) },
+    { type: "slice", cell: wrapperCompressedCell },
+    { type: "slice", cell: wrapperCompressedCell },
+    { type: "slice", cell: wrapperCompressedCell },
+    { type: "slice", cell: wrapperCompressedCell },
+    { type: "slice", cell: wrapperCompressedCell },
+    { type: "slice", cell: wrapperCompressedCell },
+    { type: "slice", cell: wrapperCompressedCell },
     { type: "int", value: 101n },
     { type: "int", value: 102n },
     { type: "int", value: 103n },
     { type: "int", value: 104n },
     { type: "int", value: 105n },
     { type: "int", value: 106n },
-    { type: "slice", cell: point(0x08, 48) },
-    { type: "slice", cell: point(0x09, 48) },
+    { type: "slice", cell: wrapperCompressedCell },
+    { type: "slice", cell: wrapperCompressedCell },
     {
       type: "tuple",
       items: publicInputs.map((value) => ({ type: "int", value })),
     },
-    { type: "slice", cell: point(0x11, 96) },
-    { type: "slice", cell: point(0x12, 96) },
-    { type: "slice", cell: point(0x13, 96) },
-    { type: "slice", cell: point(0x14, 96) },
-    { type: "slice", cell: point(0x15, 96) },
-    { type: "slice", cell: point(0x16, 96) },
-    { type: "slice", cell: point(0x17, 96) },
-    { type: "slice", cell: point(0x18, 96) },
-    { type: "slice", cell: point(0x19, 96) },
+    { type: "slice", cell: wrapperPoint.transcriptCell },
+    { type: "slice", cell: wrapperPoint.transcriptCell },
+    { type: "slice", cell: wrapperPoint.transcriptCell },
+    { type: "slice", cell: wrapperPoint.transcriptCell },
+    { type: "slice", cell: wrapperPoint.transcriptCell },
+    { type: "slice", cell: wrapperPoint.transcriptCell },
+    { type: "slice", cell: wrapperPoint.transcriptCell },
+    { type: "slice", cell: wrapperPoint.transcriptCell },
+    { type: "slice", cell: wrapperPoint.transcriptCell },
   ];
   return args;
 }
@@ -214,13 +224,13 @@ test("Tolk PLONK wrapper builds VerifyProofMessage with array<uint256> public in
   assert.equal(decoded.uncompressed.refs.length, 4);
 });
 
-test("Tolk PLONK wrapper rejects public inputs over transcript limit", async () => {
+test("Tolk PLONK wrapper rejects public inputs over the internal-message gas limit", async () => {
   const { proofMessageToCell } = await loadTemplateModule("Verifier_tolk_plonk.ts");
-  const values = Array.from({ length: 245 }, (_, index) => BigInt(index));
+  const values = Array.from({ length: 9 }, (_, index) => BigInt(index));
 
   assert.throws(
     () => proofMessageToCell(makeTolkPlonkArgs(values)),
-    /at most 244 public inputs/,
+    /at most 8 public inputs/,
   );
 });
 

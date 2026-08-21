@@ -5,6 +5,10 @@ import {
   exportPlonkFuncCalldata,
   exportPlonkTolkCalldata,
 } from "./export_plonk_calldata.js";
+import {
+  assertPlonkPointBindingCells,
+  parseCanonicalPlonkScalar,
+} from "./plonkEncoding.js";
 
 const GROTH16_VERIFY_OP = 0x3b3cca17;
 const PLONK_VERIFY_PROOF_OP = 0x76524659;
@@ -102,7 +106,7 @@ function requireTupleInt(args, index) {
   if (item?.type !== "int") {
     throw new Error(`Expected calldata[${index}] to be int.`);
   }
-  return item.value;
+  return parseCanonicalPlonkScalar(item.value, `calldata[${index}]`);
 }
 
 function requirePublicInputTuple(args) {
@@ -114,7 +118,10 @@ function requirePublicInputTuple(args) {
     if (publicInput.type !== "int") {
       throw new Error(`Expected PLONK public input ${index} to be int.`);
     }
-    return publicInput.value;
+    return parseCanonicalPlonkScalar(
+      publicInput.value,
+      `PLONK public input ${index}`,
+    );
   });
 }
 
@@ -179,6 +186,9 @@ function plonkFuncMessageFromCalldata(args) {
 }
 
 function plonkProofCells(args) {
+  if (!Array.isArray(args) || args.length !== 25) {
+    throw new Error("Expected exactly 25 PLONK calldata arguments.");
+  }
   const a = requireTupleCell(args, 0);
   const b = requireTupleCell(args, 1);
   const c = requireTupleCell(args, 2);
@@ -197,6 +207,24 @@ function plonkProofCells(args) {
   const t3Uc = requireTupleCell(args, 22);
   const wxiUc = requireTupleCell(args, 23);
   const wxiwUc = requireTupleCell(args, 24);
+
+  for (const [compressedCell, transcriptCell, index] of [
+    [a, aUc, 16],
+    [b, bUc, 17],
+    [c, cUc, 18],
+    [z, zUc, 19],
+    [t1, t1Uc, 20],
+    [t2, t2Uc, 21],
+    [t3, t3Uc, 22],
+    [wxi, wxiUc, 23],
+    [wxiw, wxiwUc, 24],
+  ]) {
+    assertPlonkPointBindingCells(
+      compressedCell,
+      transcriptCell,
+      `calldata[${index}]`,
+    );
+  }
 
   const compressedTail = beginCell()
     .storeRef(storePair(t3, wxi))

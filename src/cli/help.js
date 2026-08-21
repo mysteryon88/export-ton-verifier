@@ -18,7 +18,8 @@ Notes:
   - Tolk is the default for Groth16 and PLONK verifier generation.
     Use --func to generate FunC output.
   - If language is Tact (--tact), wrapper copy is skipped even if --wrapper-dest is provided.
-  - Internal proof verification messages must attach at least 0.05 TON.
+  - Internal proof verification messages must attach at least 0.05 TON for Groth16
+    or 0.07 TON for PLONK.
   - Groth16 public inputs must be canonical BLS12-381 scalars.
 
 Arguments:

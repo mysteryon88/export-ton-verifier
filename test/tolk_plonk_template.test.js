@@ -8,6 +8,7 @@ import { Address, beginCell, Cell, toNano } from "@ton/core";
 import { Blockchain, createShardAccount } from "@ton/sandbox";
 import { runTolkCompiler } from "@ton/tolk-js";
 import { g1Compressed, g2Compressed, getCurveFromName } from "../src/utils.js";
+import { encodePlonkG1Point } from "../src/plonkEncoding.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const templatePath = path.join(
@@ -57,17 +58,19 @@ test("renders PLONK verifier as Tolk contract instead of FunC", async () => {
   assert.match(rendered, /struct VerifierStorage \{\}/);
   assert.match(rendered, /type ScalarArray = array<uint256>/);
   assert.match(rendered, /type G1Compressed = bits384/);
-  assert.match(rendered, /type G1Uncompressed = bits768/);
+  assert.match(rendered, /fun lessThanSixLimbs\(/);
   assert.match(rendered, /struct \(0x76524659\) VerifyProofMessage \{\s*proof: Cell<VerifyProofPayload>\s*\}/);
   assert.match(rendered, /struct VerifyProofPayload \{\s*compressed: Cell<CompressedProof>\s*evaluations: Cell<EvaluationValues>\s*publicInputs: ScalarArray\s*uncompressed: Cell<UncompressedProof>\s*\}/);
   assert.match(rendered, /struct CompressedProof \{\s*ab: Cell<CompressedPair>\s*cz: Cell<CompressedPair>\s*t12: Cell<CompressedPair>\s*tail: Cell<CompressedTail>\s*\}/);
-  assert.match(rendered, /struct UncompressedProof \{\s*a: Cell<G1Uncompressed>\s*b: Cell<G1Uncompressed>\s*c: Cell<G1Uncompressed>\s*tail: Cell<UncompressedTail>\s*\}/);
+  assert.match(rendered, /struct UncompressedProof \{\s*a: cell\s*b: cell\s*c: cell\s*tail: Cell<UncompressedTail>\s*\}/);
   assert.match(rendered, /enum VerifierErrors \{\s*PublicNotPresent = 101,\s*FailedInverse = 102,\s*ScalarNotInField = 103,\s*TooManyPublics = 104,\s*InvalidMessage = 105,\s*InvalidProof = 106,\s*NotEnoughValue = 107,\s*\}/);
   assert.match(rendered, /const QM: slice = "[a-f0-9]+".hexToSlice\(\)/);
   assert.match(rendered, /@pure\s+fun blsPairing\(/);
   assert.match(rendered, /fun int\.scalarToSlice\(self\): slice/);
   assert.match(rendered, /fun G1Compressed\.asSlice\(self\): slice/);
-  assert.match(rendered, /fun G1Uncompressed\.asSlice\(self\): slice/);
+  assert.match(rendered, /fun checkPointBinding\(compressed: slice, transcriptPoint: slice\): slice/);
+  assert.match(rendered, /fun checkCurveEquation\(/);
+  assert.match(rendered, /fun checkEquationMod\(/);
   assert.match(rendered, /fun ScalarArray\.read\(self, i: int\): int/);
   assert.match(rendered, /fun ScalarArray\.setAt\(mutate self, i: int, v: int\): void/);
   assert.match(rendered, /fun checkPublicInputCount\(publicInputs: ScalarArray, nExpected: int\): void/);
@@ -78,7 +81,9 @@ test("renders PLONK verifier as Tolk contract instead of FunC", async () => {
   assert.match(rendered, /checkField\(evalA\);/);
   assert.match(rendered, /while \(newr != 0\)/);
   assert.match(rendered, /while \(pi < N_PUBLIC\)/);
-  assert.match(rendered, /betaHash\.push\(publicInputs\.read\(pi\)\.scalarToSlice\(\)\);/);
+  assert.match(rendered, /val publicInput = publicInputs\.read\(pi\);/);
+  assert.match(rendered, /checkField\(publicInput\);/);
+  assert.match(rendered, /betaHash\.push\(publicInput\.scalarToSlice\(\)\);/);
   assert.match(rendered, /checkPublicInputCount\(publicInputs, N_PUBLIC\);/);
   assert.match(rendered, /val evalL1: int = mulmod\(invd\.read\(1\), zh, blsR\(\)\);/);
   assert.doesNotMatch(rendered, /var evalL1: int/);
@@ -144,13 +149,8 @@ test("Tolk PLONK runtime rejects identity and non-subgroup points from raw input
     const g1Point = curve.G1.toObject(curve.G1.g);
     const g1 = g1Compressed(curve, g1Point);
     const g2 = g2Compressed(curve, curve.G2.toObject(curve.G2.g));
-    const g1UcBytes = new Uint8Array(96);
-    curve.G1.toRprUncompressed(
-      g1UcBytes,
-      0,
-      curve.G1.fromObject(g1Point),
-    );
-    const g1Uc = Buffer.from(g1UcBytes).toString("hex");
+    const encodedG1 = encodePlonkG1Point(curve, g1Point, "test.G1");
+    const g1Uc = Buffer.from(encodedG1.coordinates).toString("hex");
     const source = await renderTemplate(0, undefined, { g1, g2, g1Uc });
     const compiled = await runTolkCompiler({
       entrypointFileName: "VerifierPlonkRuntime.tolk",
@@ -185,7 +185,7 @@ test("Tolk PLONK runtime rejects identity and non-subgroup points from raw input
     const point = (hex) =>
       beginCell().storeBuffer(Buffer.from(hex, "hex")).endCell();
     const validG1 = point(g1);
-    const validG1Uc = point(g1Uc);
+    const validG1Uc = encodedG1.transcriptCell;
     const identity = point(
       g1Compressed(curve, curve.G1.toObject(curve.G1.zero)),
     );

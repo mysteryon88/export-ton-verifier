@@ -67,20 +67,20 @@ async function makeProof() {
   }
 }
 
-test("normalizePlonkVerificationKey rejects public input counts over TVM transcript limit", async () => {
+test("normalizePlonkVerificationKey rejects public input counts over the internal-message gas limit", async () => {
   await assert.rejects(
-    normalizePlonkVerificationKey(readyPlonkVk(245)),
-    /at most 244 public inputs/,
+    normalizePlonkVerificationKey(readyPlonkVk(9)),
+    /at most 8 public inputs/,
   );
 });
-test("PLONK calldata helpers reject public input counts over TVM transcript limit", async () => {
+test("PLONK calldata helpers reject public input counts over the internal-message gas limit", async () => {
   const proof = await makeProof();
   const publicInputs = stringifyBigInts(
-    Array.from({ length: 245 }, (_, index) => BigInt(index)),
+    Array.from({ length: 9 }, (_, index) => BigInt(index)),
   );
 
   await assert.rejects(
     exportPlonkTolkCalldata(proof, publicInputs),
-    /at most 244 public inputs/,
+    /at most 8 public inputs/,
   );
 });
