@@ -44,6 +44,35 @@ async function writeGroth16JsonVk(filePath, curveName, nPublic = 1) {
   }
 }
 
+async function writePlonkJsonVk(filePath, nPublic = 1) {
+  const curve = await getCurveFromName("bls12381");
+  try {
+    const g1 = curve.G1.toObject(curve.G1.g);
+    const g2 = curve.G2.toObject(curve.G2.g);
+    const vk = stringifyBigInts({
+      protocol: "plonk",
+      curve: "bls12381",
+      nPublic,
+      power: 4,
+      k1: 2n,
+      k2: 3n,
+      Qm: g1,
+      Ql: g1,
+      Qr: g1,
+      Qo: g1,
+      Qc: g1,
+      S1: g1,
+      S2: g1,
+      S3: g1,
+      X_2: g2,
+      w: 13n,
+    });
+    await fs.writeFile(filePath, JSON.stringify(vk), "utf8");
+  } finally {
+    await curve.terminate();
+  }
+}
+
 function runCli(args) {
   return execFileSync(process.execPath, [cliPath, ...args], {
     cwd: repoRoot,
@@ -98,6 +127,30 @@ test("doctor JSON blocks non-BLS TON verifier generation", async () => {
     assert.ok(
       report.checks.some(
         (check) => check.name === "curve" && check.ok === false,
+      ),
+    );
+  });
+});
+
+test("doctor JSON blocks PLONK verifier generation on soundness grounds", async () => {
+  await withTempDir(async (tempDir) => {
+    const inputPath = path.join(tempDir, "verification_key.json");
+    await writePlonkJsonVk(inputPath, 1);
+
+    const result = runCliFailure(["doctor", inputPath, "--json"]);
+
+    assert.notEqual(result.status, 0);
+    const report = JSON.parse(result.stdout);
+    assert.equal(report.ok, false);
+    assert.equal(report.protocol, "plonk");
+    assert.equal(report.curve, "bls12381");
+    assert.equal(report.nPublic, 1);
+    assert.ok(
+      report.checks.some(
+        (check) =>
+          check.name === "plonk-soundness" &&
+          check.ok === false &&
+          /PLONK verifier generation is disabled/.test(check.message),
       ),
     );
   });

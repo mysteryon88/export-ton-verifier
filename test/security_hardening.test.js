@@ -173,15 +173,12 @@ test("Groth16 message parsers reject exotic points and non-canonical payloads", 
   assert.match(tact, /piC: Cell/);
 });
 
-test("all expensive internal receivers enforce the minimum attached value", async () => {
-  const [funcGroth16, tolkGroth16, tactGroth16, funcPlonk, tolkPlonk] =
-    await Promise.all([
-      renderTemplate("func_verifier_groth16.ejs"),
-      renderTemplate("tolk_verifier_groth16.ejs"),
-      renderTemplate("tact_verifier_groth16.ejs"),
-      renderTemplate("func_verifier_plonk.ejs"),
-      renderTemplate("tolk_verifier_plonk.ejs"),
-    ]);
+test("all enabled expensive internal receivers enforce the minimum attached value", async () => {
+  const [funcGroth16, tolkGroth16, tactGroth16] = await Promise.all([
+    renderTemplate("func_verifier_groth16.ejs"),
+    renderTemplate("tolk_verifier_groth16.ejs"),
+    renderTemplate("tact_verifier_groth16.ejs"),
+  ]);
 
   assert.match(funcGroth16, /minVerifyValue = 50000000/);
   assert.match(funcGroth16, /recv_internal\(int msg_value,/);
@@ -192,23 +189,18 @@ test("all expensive internal receivers enforce the minimum attached value", asyn
 
   assert.match(tactGroth16, /MIN_VERIFY_VALUE: Int = 50000000/);
   assert.match(tactGroth16, /context\(\)\.value >= MIN_VERIFY_VALUE/);
-
-  assert.match(funcPlonk, /minVerifyValue = 50000000/);
-  assert.match(funcPlonk, /recv_internal\(int msg_value,/);
-  assert.match(funcPlonk, /msg_value >= verifier::minVerifyValue/);
-
-  assert.match(tolkPlonk, /MIN_VERIFY_VALUE: coins = 50000000/);
-  assert.match(tolkPlonk, /inMsg\.valueCoins >= MIN_VERIFY_VALUE/);
 });
 
-test("FunC PLONK renders a receiver and rejects negative scalars", async () => {
-  const rendered = await renderTemplate("func_verifier_plonk.ejs");
-
-  assert.match(rendered, /x >= 0/);
-  assert.match(rendered, /const op::verify = 0x76524659/);
-  assert.match(rendered, /\(\) recv_internal\(int msg_value, cell in_msg_full, slice in_msg_body\) impure/);
-  assert.match(rendered, /int ok = verify\(/);
-  assert.doesNotMatch(rendered, /\(\) recv_internal\(\) impure \{\s*\}/);
+test("PLONK verifier templates fail closed before emitting a contract", async () => {
+  for (const templateName of [
+    "func_verifier_plonk.ejs",
+    "tolk_verifier_plonk.ejs",
+  ]) {
+    await assert.rejects(
+      renderTemplate(templateName),
+      /PLONK verifier generation is disabled.*transcript points.*compressed points/i,
+    );
+  }
 });
 
 test("Groth16 generation rejects identity and non-subgroup core VK points", async () => {
@@ -261,26 +253,6 @@ test("Groth16 generation rejects identity and non-subgroup core VK points", asyn
       await curve.terminate();
     }
   });
-});
-
-test("FunC and Tolk PLONK verifiers validate every proof point before arithmetic", async () => {
-  const [func, tolk] = await Promise.all([
-    renderTemplate("func_verifier_plonk.ejs"),
-    renderTemplate("tolk_verifier_plonk.ejs"),
-  ]);
-
-  for (const rendered of [func, tolk]) {
-    assert.match(rendered, /BLS_G1_INGROUP/);
-    assert.match(rendered, /BLS_G1_ISZERO/);
-  }
-  assert.match(
-    func,
-    /check_proof_point\(A\);[\s\S]*check_proof_point\(B\);[\s\S]*check_proof_point\(C\);[\s\S]*check_proof_point\(Z\);[\s\S]*check_proof_point\(T1\);[\s\S]*check_proof_point\(T2\);[\s\S]*check_proof_point\(T3\);[\s\S]*check_proof_point\(Wxi\);[\s\S]*check_proof_point\(Wxiw\);/,
-  );
-  assert.match(
-    tolk,
-    /checkProofPoint\(a\);[\s\S]*checkProofPoint\(b\);[\s\S]*checkProofPoint\(c\);[\s\S]*checkProofPoint\(z\);[\s\S]*checkProofPoint\(t1\);[\s\S]*checkProofPoint\(t2\);[\s\S]*checkProofPoint\(t3\);[\s\S]*checkProofPoint\(wxi\);[\s\S]*checkProofPoint\(wxiw\);/,
-  );
 });
 
 test("Groth16 generation rejects verification keys with inconsistent public input metadata", async () => {
@@ -344,6 +316,52 @@ test("template-ready PLONK VK rejects mismatched compressed and uncompressed poi
       normalizePlonkVerificationKey(vk),
       /Qm.*same point/,
     );
+  } finally {
+    await curve.terminate();
+  }
+});
+
+test("template-ready PLONK VK rejects source injection in scalar fields", async () => {
+  const curve = await getCurveFromName("bls12381");
+  try {
+    const g1 = curve.G1.toObject(curve.G1.g);
+    const g2 = curve.G2.toObject(curve.G2.g);
+    const vk = readyPlonkVk({
+      g1: g1Compressed(curve, g1),
+      g2: g2Compressed(curve, g2),
+      g1Uc: await uncompressedG1Hex(curve, g1),
+    });
+    vk.k1 = "1; const int verifier::INJECTED = 1337";
+
+    await assert.rejects(
+      normalizePlonkVerificationKey(vk),
+      /verification_key\.k1/,
+    );
+  } finally {
+    await curve.terminate();
+  }
+});
+
+test("template-ready PLONK VK is rebuilt from canonical validated fields", async () => {
+  const curve = await getCurveFromName("bls12381");
+  try {
+    const g1 = curve.G1.toObject(curve.G1.g);
+    const g2 = curve.G2.toObject(curve.G2.g);
+    const g1CompressedHex = g1Compressed(curve, g1);
+    const g1UncompressedHex = await uncompressedG1Hex(curve, g1);
+    const vk = readyPlonkVk({
+      g1: `0x${g1CompressedHex.toUpperCase()}`,
+      g2: `0x${g2Compressed(curve, g2).toUpperCase()}`,
+      g1Uc: `0x${g1UncompressedHex.toUpperCase()}`,
+    });
+    vk.untrustedTemplateField = "do not copy me";
+
+    const normalized = await normalizePlonkVerificationKey(vk);
+
+    assert.equal(normalized.Qm, g1CompressedHex);
+    assert.equal(normalized.Qm_uc, g1UncompressedHex);
+    assert.equal(normalized.k1, "2");
+    assert.equal(normalized.untrustedTemplateField, undefined);
   } finally {
     await curve.terminate();
   }

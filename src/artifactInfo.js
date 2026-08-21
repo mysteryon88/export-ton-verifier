@@ -4,6 +4,7 @@ import { resolveTemplatePath } from "./helpers.js";
 import { loadVerificationKey } from "./formats/index.js";
 import { assertPlonkPublicInputCount, assertTonBlsCurve } from "./limits.js";
 import { defaultTemplatesDir } from "./templateResolver.js";
+import { assertPlonkVerifierGenerationSupported } from "./plonkSafety.js";
 
 function check(name, run) {
   try {
@@ -45,6 +46,12 @@ export async function inspectVerifierInput(
       check("plonk-public-inputs", () => {
         assertPlonkPublicInputCount(nPublic, "verification_key.nPublic");
         return "PLONK public input count fits TVM Keccak tuple limits.";
+      }),
+    );
+    checks.push(
+      check("plonk-soundness", () => {
+        assertPlonkVerifierGenerationSupported(vkRaw.protocol);
+        return "PLONK verifier generation is enabled.";
       }),
     );
   }

@@ -186,36 +186,23 @@ test("generateVerifier normalizes custom contractName for the Tolk Groth16 templ
   });
 });
 
-test("generateVerifier renders the Tolk PLONK template from verification_key.json", async () => {
+test("generateVerifier fails closed for PLONK verification keys", async () => {
   await withTempDir(async (tempDir) => {
     const inputPath = path.join(tempDir, "verification_key.json");
     const outputPath = path.join(tempDir, "verifier.tolk");
 
     await writePlonkJsonVk(inputPath, 1);
 
-    const originalLog = console.log;
-    let protocol;
-    console.log = () => {};
-
-    try {
-      protocol = await generateVerifier(inputPath, outputPath, {
+    await assert.rejects(
+      generateVerifier(inputPath, outputPath, {
         templatesDir,
-      });
-    } finally {
-      console.log = originalLog;
-    }
-
-    const rendered = await fs.readFile(outputPath, "utf8");
-
-    assert.equal(protocol, "plonk");
-    assert.match(rendered, /contract Verifier \{/);
-    assert.match(rendered, /const QM: slice = "[0-9a-f]{96}"\.hexToSlice\(\)/);
-    assert.match(rendered, /const QM_UC: slice = "[0-9a-f]{192}"\.hexToSlice\(\)/);
-    assert.match(rendered, /const X_2: slice = "[0-9a-f]{192}"\.hexToSlice\(\)/);
-    assert.match(rendered, /const K1: int = 2/);
-    assert.match(rendered, /const K2: int = 3/);
-    assert.match(rendered, /const W1: int = 13/);
-    assert.match(rendered, /const N_PUBLIC: int = 1/);
-    assert.doesNotMatch(rendered, /\[object Object\]/);
+        quiet: true,
+      }),
+      /PLONK verifier generation is disabled.*transcript points.*compressed points/i,
+    );
+    await assert.rejects(
+      fs.access(outputPath),
+      (error) => error?.code === "ENOENT",
+    );
   });
 });

@@ -74,11 +74,12 @@ async function writeGroth16JsonVk(filePath, nPublic = 1) {
   }
 }
 
-test("CLI help states Tolk is the default for PLONK and FunC needs --func", () => {
+test("CLI help says PLONK verifier generation fails closed", () => {
   const output = runCliSuccess(["--help"]);
 
-  assert.match(output, /Tolk is the default for Groth16 and PLONK verifier generation/);
-  assert.match(output, /Use --func to generate FunC output/);
+  assert.match(output, /Tolk is the default for Groth16 verifier generation/);
+  assert.match(output, /PLONK verifier generation fails closed for both FunC and Tolk/);
+  assert.match(output, /Generated verifiers are stateless/);
 });
 
 test("CLI rejects conflicting language flags for import-wrapper", async () => {

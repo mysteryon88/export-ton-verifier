@@ -13,8 +13,8 @@
 
     snarkJS is distributed in the hope that it will be useful, but WITHOUT
     ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
-    or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public
-    License for more details.
+    or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License
+    for more details.
 
     You should have received a copy of the GNU General Public License
     along with snarkJS. If not, see <https://www.gnu.org/licenses/>.
@@ -42,7 +42,16 @@ import {
 const { stringifyBigInts, unstringifyBigInts } = utils;
 
 const G1_KEYS = ["Qm", "Ql", "Qr", "Qo", "Qc", "S1", "S2", "S3"];
-const G1_UC_KEYS = ["Qm_uc", "Ql_uc", "Qr_uc", "Qo_uc", "Qc_uc", "S1_uc", "S2_uc", "S3_uc"];
+const G1_UC_KEYS = [
+  "Qm_uc",
+  "Ql_uc",
+  "Qr_uc",
+  "Qo_uc",
+  "Qc_uc",
+  "S1_uc",
+  "S2_uc",
+  "S3_uc",
+];
 
 export default async function zkeyExportPlonkVerificationKey(zkeyName) {
   await assertZkeyFieldWidths(zkeyName);
@@ -73,8 +82,27 @@ export async function normalizePlonkVerificationKey(vkRaw) {
 
   try {
     if (isTemplateReadyPlonkVerificationKey(vkRaw)) {
-      validateTemplateReadyPlonkVerificationKey(curve, vkRaw);
-      return stringifyBigInts({ ...vkRaw, nPublic, power });
+      const points = validateTemplateReadyPlonkVerificationKey(curve, vkRaw);
+      const res = {
+        protocol: "plonk",
+        curve: curve.name,
+        nPublic,
+        power,
+        k1: scalarToString(curve, vk.k1, "k1"),
+        k2: scalarToString(curve, vk.k2, "k2"),
+        w:
+          vk.w === undefined
+            ? rootOfUnityToString(curve, power)
+            : scalarToString(curve, vk.w, "w"),
+        X_2: pointToBlstCHex(curve.G2, points.X_2),
+      };
+
+      for (const key of G1_KEYS) {
+        res[key] = pointToBlstCHex(curve.G1, points[key]);
+        res[`${key}_uc`] = pointToUncompressedHex(curve.G1, points[key]);
+      }
+
+      return stringifyBigInts(res);
     }
 
     const x2 = parseBls12381Point(
@@ -93,7 +121,7 @@ export async function normalizePlonkVerificationKey(vkRaw) {
       k2: scalarToString(curve, vk.k2, "k2"),
       w:
         vk.w === undefined
-          ? scalarToString(curve, curve.Fr.w[power], "w")
+          ? rootOfUnityToString(curve, power)
           : scalarToString(curve, vk.w, "w"),
       X_2: pointToBlstCHex(curve.G2, x2),
     };
@@ -126,6 +154,8 @@ function isTemplateReadyPlonkVerificationKey(vkRaw) {
 }
 
 function validateTemplateReadyPlonkVerificationKey(curve, vkRaw) {
+  const points = {};
+
   for (const key of G1_KEYS) {
     const compressed = curve.G1.fromObject(
       decodeBls12381G1(
@@ -146,6 +176,7 @@ function validateTemplateReadyPlonkVerificationKey(curve, vkRaw) {
         `verification_key.${key}: compressed and uncompressed encodings must describe the same point.`,
       );
     }
+    points[key] = compressed;
   }
 
   const x2 = curve.G2.fromObject(
@@ -158,6 +189,9 @@ function validateTemplateReadyPlonkVerificationKey(curve, vkRaw) {
   assertBls12381Point(curve.G2, curve.r, x2, "verification_key.X_2", {
     allowIdentity: false,
   });
+  points.X_2 = x2;
+
+  return points;
 }
 
 function numberField(vkRaw, key) {
@@ -172,7 +206,35 @@ function scalarToString(curve, value, key) {
   if (value === undefined || value === null) {
     throw new Error(`verification_key: missing '${key}'.`);
   }
-  return curve.Fr.toObject(curve.Fr.fromObject(value)).toString();
+
+  let scalar;
+  if (typeof value === "bigint") {
+    scalar = value;
+  } else if (typeof value === "number" && Number.isSafeInteger(value)) {
+    scalar = BigInt(value);
+  } else if (typeof value === "string" && /^[0-9]+$/.test(value.trim())) {
+    scalar = BigInt(value.trim());
+  } else {
+    throw new Error(
+      `verification_key.${key}: expected a non-negative integer field element.`,
+    );
+  }
+
+  if (scalar < 0n || scalar >= curve.r) {
+    throw new Error(
+      `verification_key.${key}: field element must be in the range [0, r).`,
+    );
+  }
+
+  return scalar.toString();
+}
+
+function rootOfUnityToString(curve, power) {
+  const root = curve.Fr.w[power];
+  if (root === undefined) {
+    throw new Error(`verification_key.w: no root of unity for power ${power}.`);
+  }
+  return curve.Fr.toObject(root).toString();
 }
 
 function ffC2blstC(a, offset = 0) {
