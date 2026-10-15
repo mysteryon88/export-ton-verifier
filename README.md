@@ -8,7 +8,7 @@ Groth16 BLS12-381 verification keys are also supported natively from gnark JSON 
 TON verifier templates use TVM BLS12-381 opcodes, so generated on-chain verifiers require BLS12-381 verification keys. Native gnark and arkworks loaders accept BLS12-381 artifacts only, and snarkjs-compatible inputs are rejected before rendering when their curve is not BLS12-381.
 
 Verifier code can be generated for **FunC** and **Tolk** for both Groth16 and PLONK. **Tact** generation is available for Groth16. **Tolk is the default** for both Groth16 and PLONK verifier generation; pass `--func` explicitly when you need FunC output, or `--tact` for the Tact Groth16 template. TypeScript wrapper templates are selected by language and protocol for `import-wrapper` and `--wrapper-dest`.
-The Tolk PLONK template requires Tolk 1.5 or newer.
+Generated Groth16 and PLONK Tolk contracts have been compile-checked with Tolk 1.4.2. The runtime test suite uses Tolk 1.5.0.
 
 By default, the Tolk Groth16 template is generated as a flat contract without a verifier receiver struct. If you pass `--contract-name <name>`, the template switches to struct mode, normalizes names like `secondVerifier` to `SecondVerifier`, and emits the getter as `verify_<Name>`. A wrapper copied with `--wrapper-dest` calls that getter. When copying the wrapper separately, pass the same name to `import-wrapper`.
 
@@ -61,8 +61,10 @@ npm test
 
 ## Development tests
 
-Use Node.js 24.16.0 and an Acton build with Tolk 1.5 (tested with Acton
-1.2.1-trunk). Check the compiler version with `acton doctor`. On Windows,
+Use Node.js 24.16.0 and Acton 1.2.1-trunk with its bundled Tolk 1.5.0
+compiler for the contract test suite. Compilation has also been checked with
+Tolk 1.4.2, but the runtime suite has not been run with that compiler.
+Check the compiler version with `acton doctor`. On Windows,
 install Acton in the default WSL
 distribution; the Tolk test runner uses WSL when no native `acton` is available.
 
