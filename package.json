@@ -57,19 +57,20 @@
     "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && esbuild src/index.ts --bundle --packages=external --platform=node --target=node18 --format=cjs --outfile=dist/index.cjs && esbuild src/index.ts src/cli.js src/generateVerifiers.js src/export_plonk_vk.js src/export_plonk_calldata.js src/export_plonk_func_calldata.js src/artifactInfo.js src/proofMessages.js src/limits.js src/templateResolver.js src/helpers.js src/utils.js src/groth16CompressProof.js --bundle --packages=external --platform=node --target=node18 --format=esm --splitting --outdir=dist --outbase=src && tsc src/index.ts --declaration --emitDeclarationOnly --allowJs --checkJs false --noImplicitAny false --ignoreDeprecations 6.0 --skipLibCheck --module ESNext --moduleResolution Bundler --target ES2022 --outDir .build-types && node -e \"const fs=require('fs');fs.copyFileSync('.build-types/index.d.ts','dist/index.d.ts');fs.copyFileSync('.build-types/index.d.ts','dist/index.d.cts');fs.rmSync('.build-types',{recursive:true,force:true})\"",
     "pack:local": "npm pack",
     "prepack": "npm run build",
-    "test": "node scripts/run-tests.js"
+    "test": "npm run test:node && npm run test:tolk",
+    "test:node": "node scripts/run-tests.js",
+    "test:tolk": "node scripts/run-acton-tests.js"
   },
   "dependencies": {
     "@iden3/binfileutils": "0.0.12",
-    "@ton/core": "~0",
-    "ejs": "^6.0.1",
+    "@ton/core": "~0.63.1",
+    "ejs": "^7.0.1",
     "ffjavascript": "^0.3.1",
     "snarkjs": "^0.7.6"
   },
   "devDependencies": {
     "@ton-community/func-js": "0.11.0",
-    "@ton/sandbox": "0.44.0",
-    "@ton/tolk-js": "1.4.2",
+    "@ton/sandbox": "0.45.0",
     "@types/node": "^26.2.0",
     "esbuild": "0.28.2",
     "typescript": "^6.0.3"

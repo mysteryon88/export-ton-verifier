@@ -20,6 +20,8 @@ export const Opcodes = {
   verify: 0x3b3cca17,
 };
 
+const VERIFY_GETTER = "verify";
+
 export class Verifier implements Contract {
   constructor(
     readonly address: Address,
@@ -140,7 +142,7 @@ export class Verifier implements Contract {
     args.writeSlice(beginCell().storeBuffer(opts.pi_c).endCell());
     args.writeTuple(this.tupleFromInputList(opts.pubInputs));
 
-    const result = await provider.get("verify", args.build());
+    const result = await provider.get(VERIFY_GETTER, args.build());
     return result.stack.readBoolean();
   }
 }

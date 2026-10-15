@@ -1,0 +1,27 @@
+[package]
+name = "verifier-contract-tests"
+description = "Contract tests for freshly generated Tolk verifiers"
+version = "0.1.0"
+license = "GPL-3.0-or-later"
+
+[contracts.Groth16]
+src = "test/acton/generated/Groth16.tolk"
+
+[contracts.Plonk]
+src = "test/acton/generated/Plonk.tolk"
+
+[contracts.PlonkBoundary]
+src = "test/acton/generated/PlonkBoundary.tolk"
+
+[test]
+include = ["test/acton/tests/**/*.test.tolk", "test/acton/generated/tests/**/*.test.tolk"]
+studio-reporting = false
+
+[scripts]
+generate = "node scripts/generate-acton.js"
+verify = "acton run generate && npm run build && acton build && npm run test:node && acton test"
+
+[import-mappings]
+acton = ".acton"
+fixtures = "test/acton/generated"
+tests = "test/acton/tests"

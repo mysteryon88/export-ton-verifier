@@ -181,7 +181,7 @@ fun blsPairing(ag1: slice, ag2: slice, bg1: slice, bg2: slice): int asm "2 PUSHI
 /// Keccak256 transcript hash compatible with snarkjs PLONK.
 /// Expects `p` to contain at most 255 transcript items in the exact snarkjs order.
 @pure
-fun keccak256Tuple(p: tuple): int asm "255 PUSHINT EXPLODEVAR HASHEXT_KECCAK256";
+fun keccak256Tuple(p: array<slice>): int asm "255 PUSHINT EXPLODEVAR HASHEXT_KECCAK256";
 
 /// # Safety
 /// Reads the TVM BLS12-381 scalar field modulus; it has no caller-controlled inputs.
@@ -338,40 +338,19 @@ fun lessThanSixLimbs(
   limb1: int,
   limb0: int
 ): bool {
-  var decided: bool = false;
-  var result: bool = false;
-  var value = encoded.loadUint(64);
-  if (!decided && value != limb5) {
-    result = value < limb5;
-    decided = true;
-  }
-  value = encoded.loadUint(64);
-  if (!decided && value != limb4) {
-    result = value < limb4;
-    decided = true;
-  }
-  value = encoded.loadUint(64);
-  if (!decided && value != limb3) {
-    result = value < limb3;
-    decided = true;
-  }
-  value = encoded.loadUint(64);
-  if (!decided && value != limb2) {
-    result = value < limb2;
-    decided = true;
-  }
-  value = encoded.loadUint(64);
-  if (!decided && value != limb1) {
-    result = value < limb1;
-    decided = true;
-  }
-  value = encoded.loadUint(64);
-  if (!decided && value != limb0) {
-    result = value < limb0;
-    decided = true;
-  }
+  val value5 = encoded.loadUint(64);
+  val value4 = encoded.loadUint(64);
+  val value3 = encoded.loadUint(64);
+  val value2 = encoded.loadUint(64);
+  val value1 = encoded.loadUint(64);
+  val value0 = encoded.loadUint(64);
   encoded.assertEnd();
-  return result;
+  if (value5 != limb5) { return value5 < limb5; }
+  if (value4 != limb4) { return value4 < limb4; }
+  if (value3 != limb3) { return value3 < limb3; }
+  if (value2 != limb2) { return value2 < limb2; }
+  if (value1 != limb1) { return value1 < limb1; }
+  return value0 < limb0;
 }
 
 @inline
@@ -805,7 +784,7 @@ get fun verify(
   checkField(evalZw);
 
   // Challenge round 2: beta.
-  var betaHash: tuple = [];
+  var betaHash: array<slice> = [];
   betaHash.push(QM_UC);
   betaHash.push(QL_UC);
   betaHash.push(QR_UC);
@@ -831,12 +810,12 @@ get fun verify(
   val beta = keccak256Tuple(betaHash) % blsR();
 
   // Challenge: gamma.
-  var gammaHash: tuple = [];
+  var gammaHash: array<slice> = [];
   gammaHash.push(beta.scalarToSlice());
   val gamma = keccak256Tuple(gammaHash) % blsR();
 
   // Challenge round 3: alpha.
-  var alphaHash: tuple = [];
+  var alphaHash: array<slice> = [];
   alphaHash.push(beta.scalarToSlice());
   alphaHash.push(gamma.scalarToSlice());
   alphaHash.push(zTranscript);
@@ -845,7 +824,7 @@ get fun verify(
   val alpha2 = mulmod(alpha, alpha, blsR());
 
   // Challenge round 4: xi.
-  var xiHash: tuple = [];
+  var xiHash: array<slice> = [];
   xiHash.push(alpha.scalarToSlice());
   xiHash.push(t1Transcript);
   xiHash.push(t2Transcript);
@@ -864,7 +843,7 @@ get fun verify(
   invs.setAt(0, zh);
 
   // Challenge round 5: v.
-  var vHash: tuple = [];
+  var vHash: array<slice> = [];
   vHash.push(xi.scalarToSlice());
   vHash.push(evalA.scalarToSlice());
   vHash.push(evalB.scalarToSlice());
@@ -880,7 +859,7 @@ get fun verify(
   val v5 = mulmod(v4, v1, blsR());
 
   // Challenge: u.
-  var uHash: tuple = [];
+  var uHash: array<slice> = [];
   uHash.push(wxiTranscript);
   uHash.push(wxiwTranscript);
   val u = keccak256Tuple(uHash) % blsR();

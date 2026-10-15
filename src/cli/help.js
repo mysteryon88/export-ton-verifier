@@ -4,7 +4,7 @@ Usage:
   export-ton-verifier <inputPath> <outputPath> [--func | --tolk | --tact] [--contract-name <name>] [--wrapper-dest <destPath>] [--groth16 | --plonk] [--force]
   export-ton-verifier doctor <inputPath> [--func | --tolk | --tact] [--json]
   export-ton-verifier proof-to-message <proof.json> <public.json> [--func | --tolk] [--groth16 | --plonk] [--format base64|hex] [--output <file>]
-  export-ton-verifier import-wrapper <destPath> [--func | --tolk] [--groth16 | --plonk] [--force]
+  export-ton-verifier import-wrapper <destPath> [--func | --tolk] [--groth16 | --plonk] [--contract-name <name>] [--force]
 
 Description:
   1) Generates a TON verifier smart contract from .zkey, snarkjs JSON, gnark, or arkworks artifacts.
@@ -39,7 +39,7 @@ Options:
   --func                    Use FunC language template for the verifier
   --tolk                    Use Tolk language template for the verifier [default]
   --tact                    Use Tact language template for the verifier
-  --contract-name <name>    Wrap the generated Tolk verifier in a named struct receiver
+  --contract-name <name>    Name the Tolk Groth16 receiver and its wrapper getter
   --wrapper-dest <destPath> After generation, copy a language-specific TypeScript wrapper to <destPath>
   --groth16                 Protocol hint for wrapper selection (wrapper only; verifier protocol is auto-detected)
   --plonk                   Protocol hint for wrapper selection (wrapper only; verifier protocol is auto-detected)

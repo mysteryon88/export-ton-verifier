@@ -8,8 +8,9 @@ Groth16 BLS12-381 verification keys are also supported natively from gnark JSON 
 TON verifier templates use TVM BLS12-381 opcodes, so generated on-chain verifiers require BLS12-381 verification keys. Native gnark and arkworks loaders accept BLS12-381 artifacts only, and snarkjs-compatible inputs are rejected before rendering when their curve is not BLS12-381.
 
 Verifier code can be generated for **FunC** and **Tolk** for both Groth16 and PLONK. **Tact** generation is available for Groth16. **Tolk is the default** for both Groth16 and PLONK verifier generation; pass `--func` explicitly when you need FunC output, or `--tact` for the Tact Groth16 template. TypeScript wrapper templates are selected by language and protocol for `import-wrapper` and `--wrapper-dest`.
+The Tolk PLONK template requires Tolk 1.5 or newer.
 
-By default, the Tolk Groth16 template is generated as a flat contract without a verifier receiver struct. If you pass `--contract-name <name>`, the template switches to struct mode, normalizes names like `secondVerifier` to `SecondVerifier`, and emits the getter as `verify_<Name>`.
+By default, the Tolk Groth16 template is generated as a flat contract without a verifier receiver struct. If you pass `--contract-name <name>`, the template switches to struct mode, normalizes names like `secondVerifier` to `SecondVerifier`, and emits the getter as `verify_<Name>`. A wrapper copied with `--wrapper-dest` calls that getter. When copying the wrapper separately, pass the same name to `import-wrapper`.
 
 ## Installation
 
@@ -58,6 +59,50 @@ $env:PLONK_E2E_DIR = "C:\path\to\condition-artifacts"
 npm test
 ```
 
+## Development tests
+
+Use Node.js 24.16.0 and an Acton build with Tolk 1.5 (tested with Acton
+1.2.1-trunk). Check the compiler version with `acton doctor`. On Windows,
+install Acton in the default WSL
+distribution; the Tolk test runner uses WSL when no native `acton` is available.
+
+From the repository root in WSL (or a native Acton shell):
+
+```sh
+npm ci
+acton run generate      # Generate test verifier contracts and proof fixtures
+acton build             # Compile the generated contracts
+acton test              # Run the Tolk contract tests
+acton run verify        # Generate, build the npm package and contracts, run Node.js and Tolk tests
+```
+
+`Acton.toml` lives at the repository root. `acton run generate` prepares the
+Groth16/PLONK fixtures under `test/acton/generated`; use the CLI below to generate
+a verifier from your own verification key. `acton run verify` stops at the first
+failed step. Its trailing arguments are passed to the final `acton test`, for
+example `acton run verify --filter Groth16`.
+
+The npm entry points remain available, including the Windows-to-WSL fallback:
+
+```sh
+npm ci
+npm test                # Node.js tests, then native Acton contract tests
+npm run test:node       # Generator, calldata, TypeScript wrappers, and FunC runtime
+npm run test:tolk       # Freshly generate contracts/fixtures, then run Acton
+node scripts/run-acton-tests.js --filter Groth16
+```
+
+Tolk execution tests live in `test/acton/tests/*.test.tolk`. They cover Groth16
+flat and named getters, batching boundaries, proof/message validation, and the
+PLONK transaction gas budget. Node.js prepares verification keys and proof data;
+Acton compiles and executes the generated contracts. The npm WASM Tolk compiler
+is not required. Generated sources, fixtures, and Acton build output are ignored.
+Refresh inputs with `acton run generate` before calling `acton build` or
+`acton test` directly. `acton run verify` and `npm run test:tolk` do this automatically.
+
+`PLONK_E2E_DIR` also enables the Acton real-proof regression. Without these
+external circuit artifacts, the runner explicitly reports that this test is skipped.
+
 ## Usage CLI
 
 ```sh
@@ -99,6 +144,7 @@ npx export-ton-verifier proof-to-message ./circuits/proof.json ./circuits/public
 
 # Only copy the TypeScript wrapper (protocol required; Tolk/default selection when language is omitted):
 npx export-ton-verifier import-wrapper ./wrappers/ --groth16 --force
+npx export-ton-verifier import-wrapper ./wrappers/SecondVerifier.ts --groth16 --contract-name secondVerifier
 npx export-ton-verifier import-wrapper ./wrappers/ --groth16 --func --force
 npx export-ton-verifier import-wrapper ./wrappers/ --plonk --force
 npx export-ton-verifier import-wrapper ./wrappers/ --plonk --func --force

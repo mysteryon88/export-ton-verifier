@@ -4,9 +4,11 @@ import fs from "fs/promises";
 import path from "path";
 import { pathToFileURL, fileURLToPath } from "url";
 import ts from "typescript";
+import { utils } from "ffjavascript";
 import { Address, beginCell } from "@ton/core";
 import { getCurveFromName } from "../src/utils.js";
 import { encodePlonkG1Point } from "../src/plonkEncoding.js";
+import { runCliInProcess } from "../test-support/run_cli.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.join(__dirname, "..");
@@ -35,9 +37,9 @@ async function withRepoTempDir(run) {
   }
 }
 
-async function loadTemplateModule(templateName) {
+async function loadTemplateModule(templateName, sourcePath = path.join(templatesDir, templateName)) {
   return withRepoTempDir(async (tempDir) => {
-    const source = await fs.readFile(path.join(templatesDir, templateName), "utf8");
+    const source = await fs.readFile(sourcePath, "utf8");
     const transpiled = ts.transpileModule(source, {
       compilerOptions: {
         target: ts.ScriptTarget.ES2022,
@@ -55,6 +57,37 @@ async function loadTemplateModule(templateName) {
     return module;
   });
 }
+
+test("named Groth16 wrappers invoke the generated getter when generated or imported", async () => {
+  await withRepoTempDir(async (tempDir) => {
+    const keyPath = path.join(tempDir, "verification_key.json");
+    const g1 = wrapperCurve.G1.toObject(wrapperCurve.G1.g);
+    const g2 = wrapperCurve.G2.toObject(wrapperCurve.G2.g);
+    await fs.writeFile(keyPath, JSON.stringify(utils.stringifyBigInts({
+      protocol: "groth16", curve: "bls12381", nPublic: 0,
+      vk_alpha_1: g1, vk_beta_2: g2, vk_gamma_2: g2, vk_delta_2: g2, IC: [g1],
+    })));
+    const output = path.join(tempDir, "verifier.tolk");
+    for (const mode of ["generate", "import"]) {
+      const wrapperPath = path.join(tempDir, `${mode}.ts`);
+      const args = mode === "generate"
+        ? [keyPath, output, "--wrapper-dest", wrapperPath]
+        : ["import-wrapper", wrapperPath, "--groth16"];
+      const result = await runCliInProcess([...args, "--contract-name", "secondVerifier"]);
+      assert.equal(result.status, 0, result.stderr);
+      const { Verifier } = await loadTemplateModule(`${mode}.ts`, wrapperPath);
+      const verifier = Verifier.createFromAddress(new Address(0, Buffer.alloc(32)));
+      let calledMethod;
+      await verifier.getVerify({
+        get: async (method) => {
+          calledMethod = method;
+          return { stack: { readBoolean: () => true } };
+        },
+      }, { pi_a: Buffer.alloc(48), pi_b: Buffer.alloc(96), pi_c: Buffer.alloc(48), pubInputs: [] });
+      assert.equal(calledMethod, "verify_SecondVerifier", mode);
+    }
+  });
+});
 
 function decodeSerializedIntArray(cell) {
   let slice = cell.beginParse();

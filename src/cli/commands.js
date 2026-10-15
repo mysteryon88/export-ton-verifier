@@ -131,7 +131,7 @@ async function runProofToMessageCommand(args, ctx) {
 }
 
 async function runImportWrapperCommand(args, ctx) {
-  const [destPath] = positionalArgs(args.slice(1));
+  const [destPath] = positionalArgs(args.slice(1), { valueFlags: ["--contract-name"] });
   if (!destPath || destPath.startsWith("--")) {
     throw new CliUsageError("Missing <destPath> for 'import-wrapper'.", {
       showHelp: true,
@@ -143,7 +143,9 @@ async function runImportWrapperCommand(args, ctx) {
   const force = args.includes("--force");
   const wrapperSrc = resolveWrapperTemplate(ctx.templatesDir, lang, protocol);
 
-  await copyWrapper(wrapperSrc, destPath, { force, stdout: ctx.stdout });
+  await copyWrapper(wrapperSrc, destPath, {
+    force, stdout: ctx.stdout, contractName: getFlagValue(args, "--contract-name"),
+  });
   return 0;
 }
 
@@ -182,7 +184,7 @@ async function runGenerateCommand(args, ctx) {
       const protocol =
         parseProtocolFlag(args, { required: false }) || detectedProtocol;
       const wrapperSrc = resolveWrapperTemplate(ctx.templatesDir, lang, protocol);
-      await copyWrapper(wrapperSrc, wrapperDest, { force, stdout: ctx.stdout });
+      await copyWrapper(wrapperSrc, wrapperDest, { force, stdout: ctx.stdout, contractName });
     }
   }
 

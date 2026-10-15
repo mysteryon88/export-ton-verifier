@@ -3,6 +3,7 @@ import fs from "fs";
 import fsp from "fs/promises";
 import path from "path";
 import { CliUsageError } from "./errors.js";
+import { normalizeContractName } from "../helpers.js";
 
 export function fileExists(p) {
   try {
@@ -19,9 +20,12 @@ export async function ensureDir(dir) {
 export async function copyWrapper(
   wrapperSrc,
   destPath,
-  { force = false, stdout = process.stdout } = {},
+  { force = false, stdout = process.stdout, contractName = null } = {},
 ) {
   if (!destPath) throw new CliUsageError("Missing <destPath> for wrapper copy.");
+  const verifierName = typeof contractName === "string" && contractName.trim()
+    ? normalizeContractName(contractName)
+    : null;
 
   let stat = null;
   try {
@@ -42,7 +46,13 @@ export async function copyWrapper(
     );
   }
 
-  const content = await fsp.readFile(wrapperSrc);
+  let content = await fsp.readFile(wrapperSrc, "utf8");
+  if (verifierName) {
+    content = content.replace(
+      'const VERIFY_GETTER = "verify";',
+      `const VERIFY_GETTER = "verify_${verifierName}";`,
+    );
+  }
   await fsp.writeFile(finalDest, content);
   stdout.write(`Wrapper copied to: ${finalDest}\n`);
 }
