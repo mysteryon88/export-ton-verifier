@@ -21,6 +21,8 @@ Notes:
   - Internal proof verification messages must attach at least 0.05 TON for Groth16
     or 0.07 TON for PLONK.
   - Groth16 public inputs must be canonical BLS12-381 scalars.
+  - Generated verifiers are stateless. Applications must enforce replay protection, accepted roots,
+    recipient binding, domain separation, nonces, and state-transition rules in a stateful wrapper.
 
 Arguments:
   inputPath       Path to .zkey, snarkjs verification_key.json, gnark JSON/.bin, or arkworks JSON

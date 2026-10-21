@@ -62,6 +62,8 @@ signal count against their circuit's verification key before encoding.
 
 PLONK proof points have two representations: 48-byte compressed BLS12-381 points consumed by TVM BLS opcodes and 96-byte `x || y` coordinates consumed by the snarkjs Fiat-Shamir transcript. Generated FunC and Tolk verifiers bind every pair on-chain. They require canonical coordinates, a canonical non-identity prime-order compressed point, the same `x` and sign bit, and an exact signed curve-equation quotient witness. The contract checks the bounded integer equation with five pairwise-coprime CRT moduli; their product is larger than twice the maximum possible difference, so this is an exact check rather than a probabilistic one. Wrapper and calldata helpers perform the full equation check with `BigInt` before encoding.
 
+Older generated PLONK contracts that lack these on-chain point-binding checks must be regenerated before deployment. Updating this npm package does not update deployed contracts.
+
 The PLONK internal-message opcode is `0x76524659`. The root contains only the 32-bit opcode and one payload reference. The payload contains compressed points, six evaluations, public signals, and the nine transcript-point cells. FunC public signals use the existing 32-bit-key dictionary cell; Tolk public signals use `array<uint256>`. `proofToMessageCell` and `proofToMessageBoc` produce this same layout, and the generated TypeScript wrappers use it in `sendVerify`.
 
 Both receivers require at least `0.07 TON`, which provides the protocol gas credit needed at the supported public-input limit. Malformed, truncated, or trailing message structure exits with `105`; a well-formed but invalid proof or mismatched point representation exits with `106`; a scalar outside `[0, r)` exits with `103`. The getter keeps the existing 25-item calldata interface and returns `false` for a well-formed cryptographically invalid proof.
@@ -92,6 +94,21 @@ containing `condition_js/condition.wasm`, `condition_0000.zkey`, and
 $env:PLONK_E2E_DIR = "C:\path\to\condition-artifacts"
 npm test
 ```
+
+## Security and integration
+
+Generated verifiers are stateless cryptographic components. A successful proof check only means that the supplied proof is valid for its public inputs and verification key. It does not mean that an application-level action is authorized.
+
+A stateful wrapper or calling contract must implement every protection required by the application, including:
+
+- nullifier or proof replay protection;
+- nonce or query-id handling;
+- validation against a known or currently accepted root;
+- recipient and amount binding;
+- chain, contract, and application domain separation;
+- validation of the intended state transition.
+
+Values such as the recipient, asset, amount, root, chain identifier, contract address, and action type should be constrained by the circuit and exposed as public inputs where appropriate. The stateful wrapper must compare those public inputs with its own trusted context. Do not accept an unrelated recipient or action parameter beside a valid proof and assume the verifier binds them automatically.
 
 ## Development tests
 

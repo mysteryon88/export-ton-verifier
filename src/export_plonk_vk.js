@@ -155,17 +155,21 @@ function validateTemplateReadyPlonkVerificationKey(curve, vkRaw) {
 
   for (const key of G1_KEYS) {
     const compressed = curve.G1.fromObject(
-      decodeBls12381G1(
-        curve,
-        decodeHex(vkRaw[key], `verification_key.${key}`),
-        `verification_key.${key}`,
+      unstringifyBigInts(
+        decodeBls12381G1(
+          curve,
+          decodeHex(vkRaw[key], `verification_key.${key}`),
+          `verification_key.${key}`,
+        ),
       ),
     );
     const uncompressed = curve.G1.fromObject(
-      decodeBls12381G1(
-        curve,
-        decodeHex(vkRaw[`${key}_uc`], `verification_key.${key}_uc`),
-        `verification_key.${key}_uc`,
+      unstringifyBigInts(
+        decodeBls12381G1(
+          curve,
+          decodeHex(vkRaw[`${key}_uc`], `verification_key.${key}_uc`),
+          `verification_key.${key}_uc`,
+        ),
       ),
     );
     if (!curve.G1.eq(compressed, uncompressed)) {
@@ -177,10 +181,12 @@ function validateTemplateReadyPlonkVerificationKey(curve, vkRaw) {
   }
 
   const x2 = curve.G2.fromObject(
-    decodeBls12381G2(
-      curve,
-      decodeHex(vkRaw.X_2, "verification_key.X_2"),
-      "verification_key.X_2",
+    unstringifyBigInts(
+      decodeBls12381G2(
+        curve,
+        decodeHex(vkRaw.X_2, "verification_key.X_2"),
+        "verification_key.X_2",
+      ),
     ),
   );
   assertBls12381Point(curve.G2, curve.r, x2, "verification_key.X_2", {

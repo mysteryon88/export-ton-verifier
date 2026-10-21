@@ -57,6 +57,7 @@ test("CLI help states Tolk is the default for PLONK and FunC needs --func", asyn
 
   assert.match(output, /Tolk is the default for Groth16 and PLONK verifier generation/);
   assert.match(output, /Use --func to generate FunC output/);
+  assert.match(output, /Generated verifiers are stateless/);
 });
 
 test("CLI rejects conflicting language flags for import-wrapper", async () => {

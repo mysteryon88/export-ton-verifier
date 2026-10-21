@@ -348,6 +348,53 @@ test("template-ready PLONK VK rejects mismatched compressed and uncompressed poi
   }
 });
 
+test("template-ready PLONK VK rejects source injection in scalar fields", async () => {
+  const curve = await getCurveFromName("bls12381");
+  try {
+    const g1 = curve.G1.toObject(curve.G1.g);
+    const g2 = curve.G2.toObject(curve.G2.g);
+    const vk = readyPlonkVk({
+      g1: g1Compressed(curve, g1),
+      g2: g2Compressed(curve, g2),
+      g1Uc: await uncompressedG1Hex(curve, g1),
+    });
+    vk.k1 = "1; const int verifier::INJECTED = 1337";
+
+    await assert.rejects(
+      normalizePlonkVerificationKey(vk),
+      /verification_key\.k1/,
+    );
+  } finally {
+    await curve.terminate();
+  }
+});
+
+test("template-ready PLONK VK is rebuilt from canonical validated fields", async () => {
+  const curve = await getCurveFromName("bls12381");
+  try {
+    const g1 = curve.G1.toObject(curve.G1.g);
+    const g2 = curve.G2.toObject(curve.G2.g);
+    const compressed = g1Compressed(curve, g1);
+    const uncompressed = await uncompressedG1Hex(curve, g1);
+    const vk = readyPlonkVk({
+      g1: `0x${compressed.toUpperCase()}`,
+      g2: `0x${g2Compressed(curve, g2).toUpperCase()}`,
+      g1Uc: `0x${uncompressed.toUpperCase()}`,
+    });
+    vk.untrustedTemplateField = "do not copy me";
+
+    const normalized = await normalizePlonkVerificationKey(vk);
+    assert.equal(normalized.Qm, compressed);
+    assert.equal(normalized.Qm_uc, uncompressed);
+    assert.equal(normalized.X_2, g2Compressed(curve, g2));
+    assert.equal(normalized.k1, "2");
+    assert.equal(normalized.untrustedTemplateField, undefined);
+    assert.deepEqual(await normalizePlonkVerificationKey(normalized), normalized);
+  } finally {
+    await curve.terminate();
+  }
+});
+
 test("PLONK VK normalization rejects coercive metadata and canonicalizes output", async () => {
   const curve = await getCurveFromName("bls12381");
   try {
