@@ -44,6 +44,20 @@ import {
 `proofToMessageBoc` converts proof/public-signal JSON into a base64 or hex BOC internal message body for supported generated verifier templates.
 PLONK verifier generation supports at most `MAX_PLONK_PUBLIC_INPUTS` (currently 8) public inputs. This common FunC/Tolk limit keeps the measured full internal-message pairing boundary below 920,000 gas and reserves at least 8% under TVM's 1,000,000 transaction gas ceiling.
 
+Input resource limits: verification-key files and each `proof-to-message` JSON file
+are limited to 16 MiB. JSON is limited to 64 nesting levels, 10,000 values,
+4096 entries per container, and 1024 characters per numeric string. Curve names
+also have a 1024-character limit. Arkworks
+verification keys support at most 4096 IC points, matching the Gnark point limit.
+`groth16CompressProof` and FunC message encoding accept at most 4096 public
+signals; Tolk message encoding accepts at most 255. These are host-side resource
+limits, not guarantees that a circuit fits the TVM gas budget. Groth16 proof
+coordinates accept affine or projective arrays with integers of at most 384 bits;
+public signals are limited to 256 bits. Values may be integer strings, `bigint`,
+or safe JavaScript integers. Only the three required Groth16 proof points are
+converted; unrelated proof metadata is ignored. Callers should also check the
+signal count against their circuit's verification key before encoding.
+
 ### PLONK point binding and message ABI
 
 PLONK proof points have two representations: 48-byte compressed BLS12-381 points consumed by TVM BLS opcodes and 96-byte `x || y` coordinates consumed by the snarkjs Fiat-Shamir transcript. Generated FunC and Tolk verifiers bind every pair on-chain. They require canonical coordinates, a canonical non-identity prime-order compressed point, the same `x` and sign bit, and an exact signed curve-equation quotient witness. The contract checks the bounded integer equation with five pairwise-coprime CRT moduli; their product is larger than twice the maximum possible difference, so this is an exact check rather than a probabilistic one. Wrapper and calldata helpers perform the full equation check with `BigInt` before encoding.
@@ -52,7 +66,27 @@ The PLONK internal-message opcode is `0x76524659`. The root contains only the 32
 
 Both receivers require at least `0.07 TON`, which provides the protocol gas credit needed at the supported public-input limit. Malformed, truncated, or trailing message structure exits with `105`; a well-formed but invalid proof or mismatched point representation exits with `106`; a scalar outside `[0, r)` exits with `103`. The getter keeps the existing 25-item calldata interface and returns `false` for a well-formed cryptographically invalid proof.
 
-The opt-in real-proof regression test expects an artifact directory containing `condition_js/condition.wasm`, `condition_0000.zkey`, and its matching `verification_key.json`:
+The real-proof PLONK regression runs by default in both Node.js/FunC and
+Acton/Tolk. On the first run, Circom compiles `test/circuits/condition.circom`
+for BLS12-381 and snarkjs generates a small local Powers of Tau setup, a PLONK
+proving key, and its verification key. These test artifacts are cached in
+`build/plonk-e2e/` and regenerated when the circuit, generation recipe, or
+dependency lockfile changes. The generated setup is for tests only; do not use
+its keys in production.
+
+Install Circom (tested with 2.2.3) and put `circom` on `PATH` for initial
+generation. On Windows, the generator also supports Circom in the default WSL
+distribution. No parameter downloads are needed. Normal test commands prepare
+the artifacts automatically; to prepare them separately:
+
+```sh
+npm run test:e2e:prepare
+npm test
+```
+
+To use your own matching artifacts instead, set `PLONK_E2E_DIR` to a directory
+containing `condition_js/condition.wasm`, `condition_0000.zkey`, and
+`verification_key.json`. The circuit must accept `{ a, b, cond }` inputs:
 
 ```powershell
 $env:PLONK_E2E_DIR = "C:\path\to\condition-artifacts"
@@ -102,8 +136,9 @@ is not required. Generated sources, fixtures, and Acton build output are ignored
 Refresh inputs with `acton run generate` before calling `acton build` or
 `acton test` directly. `acton run verify` and `npm run test:tolk` do this automatically.
 
-`PLONK_E2E_DIR` also enables the Acton real-proof regression. Without these
-external circuit artifacts, the runner explicitly reports that this test is skipped.
+The real-proof regression is included in the Acton fixtures automatically.
+`PLONK_E2E_DIR` overrides the generated test circuit for both test runners;
+missing or invalid artifacts fail the tests instead of skipping the regression.
 
 ## Usage CLI
 

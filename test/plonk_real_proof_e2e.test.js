@@ -8,12 +8,14 @@ import { Address, beginCell, Cell, toNano } from "@ton/core";
 import { Blockchain, createShardAccount } from "@ton/sandbox";
 import { compileFunc } from "@ton-community/func-js";
 import { generateVerifier } from "../src/generateVerifiers.js";
+import { getCurveFromName } from "../src/utils.js";
 import {
   exportPlonkFuncCalldata,
 } from "../src/export_plonk_calldata.js";
 import { proofToMessageCell } from "../src/proofMessages.js";
 import { BLS12_381_SCALAR_FIELD } from "../src/plonkEncoding.js";
 import { MINIMAL_FUNC_STDLIB } from "../test-support/func_minimal_stdlib.js";
+import { ensurePlonkE2EArtifacts } from "../test-support/plonk_e2e.js";
 
 import {
   writeGasBoundaryArtifacts, mismatchFirstCompressedPoint, addTrailingBit,
@@ -22,7 +24,6 @@ import {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.join(__dirname, "..");
-const artifactDir = process.env.PLONK_E2E_DIR;
 async function withRepoTempDir(run) {
   const tempDir = path.join(
     repoRoot,
@@ -144,8 +145,12 @@ test("maximum supported PLONK public inputs fit FunC transaction gas limits", as
 
 test(
   "real snarkjs PLONK proof passes getter and internal-message verification in FunC",
-  { skip: !artifactDir },
-  async () => {
+  async (t) => {
+    t.after(async () => {
+      const curve = await getCurveFromName("bls12381");
+      await curve.terminate();
+    });
+    const artifactDir = await ensurePlonkE2EArtifacts();
     const wasmPath = path.join(artifactDir, "condition_js", "condition.wasm");
     const zkeyPath = path.join(artifactDir, "condition_0000.zkey");
     const verificationKeyPath = path.join(artifactDir, "verification_key.json");

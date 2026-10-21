@@ -9,6 +9,7 @@ import { g1Compressed, g2Compressed, getCurveFromName } from "../src/utils.js";
 import { exportPlonkTolkCalldata } from "../src/export_plonk_calldata.js";
 import { proofToMessageCell } from "../src/proofMessages.js";
 import { BLS12_381_BASE_FIELD } from "../src/plonkEncoding.js";
+import { ensurePlonkE2EArtifacts } from "./plonk_e2e.js";
 import {
   writeGasBoundaryArtifacts, replaceCellRef, mismatchFirstCompressedPoint,
   addTrailingBit, emptyCompressedTree, malformedPublicInputs,
@@ -50,6 +51,7 @@ function compressedPoints(body) {
 }
 
 export async function prepareActonFixtures(root) {
+  const artifactDir = await ensurePlonkE2EArtifacts();
   const generated = path.join(root, "generated");
   await fs.mkdir(generated, { recursive: true });
   const declarations = ['import "@acton/fmt"'];
@@ -230,43 +232,42 @@ get fun compareHalfBaseField(encoded: slice): bool { return lessThanHalfBaseFiel
       emptyCompressedTree(body), malformedPublicInputs(body), malformedTranscriptWitness(body),
     ]);
     await fs.writeFile(path.join(generated, "fixtures.tolk"), declarations.join("\n") + "\n");
-    const optionalTest = path.join(generated, "tests", "real-plonk.test.tolk");
-    await fs.rm(optionalTest, { force: true });
-    if (process.env.PLONK_E2E_DIR) {
-      const snarkjs = await import("snarkjs");
-      const artifactDir = process.env.PLONK_E2E_DIR;
-      const keyPath = path.join(artifactDir, "verification_key.json");
-      const verificationKey = JSON.parse(await fs.readFile(keyPath, "utf8"));
-      const { proof, publicSignals } = await snarkjs.plonk.fullProve(
-        { a: "10", b: "20", cond: "1" },
-        path.join(artifactDir, "condition_js", "condition.wasm"),
-        path.join(artifactDir, "condition_0000.zkey"),
-      );
-      if (!await snarkjs.plonk.verify(verificationKey, publicSignals, proof)) {
-        throw new Error("The real-proof fixture failed independent snarkjs verification.");
-      }
-      await generateVerifier(keyPath, path.join(generated, "PlonkReal.tolk"), { quiet: true });
-      const realDeclarations = ['import "@acton/fmt"'];
-      for (const [prefix, value] of [
-        ["realPlonk", proof],
-        ["realPlonkInvalid", { ...proof, eval_a: ((BigInt(proof.eval_a) + 1n) % curve.r).toString() }],
-      ]) {
-        const valid = await snarkjs.plonk.verify(verificationKey, publicSignals, value);
-        if (valid !== (prefix === "realPlonk")) {
-          throw new Error(`Unexpected snarkjs verification result for ${prefix}.`);
-        }
-        const args = await exportPlonkTolkCalldata(value, publicSignals);
-        const body = await proofToMessageCell({ proof: value, publicSignals, protocol: "plonk", lang: "tolk" });
-        realDeclarations.push(`fun ${prefix}Args(): array<unknown> { return ${argsLiteral(args)}; }`);
-        realDeclarations.push(`fun ${prefix}Body(): cell { return ${cellLiteral(body)}; }`);
-      }
-      await fs.writeFile(path.join(generated, "real-fixtures.tolk"), realDeclarations.join("\n") + "\n");
-      await fs.mkdir(path.dirname(optionalTest), { recursive: true });
-      await fs.copyFile(path.join(root, "optional", "real-plonk.test.tolk"), optionalTest);
-    } else {
-      console.log("Skipping real PLONK proof test: set PLONK_E2E_DIR to the circuit artifacts.");
+    const realTest = path.join(generated, "tests", "real-plonk.test.tolk");
+    await fs.rm(realTest, { force: true });
+    const snarkjs = await import("snarkjs");
+    const keyPath = path.join(artifactDir, "verification_key.json");
+    const verificationKey = JSON.parse(await fs.readFile(keyPath, "utf8"));
+    const { proof: realProof, publicSignals: realSignals } = await snarkjs.plonk.fullProve(
+      { a: "10", b: "20", cond: "1" },
+      path.join(artifactDir, "condition_js", "condition.wasm"),
+      path.join(artifactDir, "condition_0000.zkey"),
+    );
+    if (!await snarkjs.plonk.verify(verificationKey, realSignals, realProof)) {
+      throw new Error("The real-proof fixture failed independent snarkjs verification.");
     }
+    await generateVerifier(keyPath, path.join(generated, "PlonkReal.tolk"), { quiet: true });
+    const realDeclarations = ['import "@acton/fmt"'];
+    for (const [prefix, value] of [
+      ["realPlonk", realProof],
+      ["realPlonkInvalid", { ...realProof, eval_a: ((BigInt(realProof.eval_a) + 1n) % curve.r).toString() }],
+    ]) {
+      const valid = await snarkjs.plonk.verify(verificationKey, realSignals, value);
+      if (valid !== (prefix === "realPlonk")) {
+        throw new Error(`Unexpected snarkjs verification result for ${prefix}.`);
+      }
+      const args = await exportPlonkTolkCalldata(value, realSignals);
+      const body = await proofToMessageCell({ proof: value, publicSignals: realSignals, protocol: "plonk", lang: "tolk" });
+      realDeclarations.push(`fun ${prefix}Args(): array<unknown> { return ${argsLiteral(args)}; }`);
+      realDeclarations.push(`fun ${prefix}Body(): cell { return ${cellLiteral(body)}; }`);
+    }
+    await fs.writeFile(path.join(generated, "real-fixtures.tolk"), realDeclarations.join("\n") + "\n");
+    await fs.mkdir(path.dirname(realTest), { recursive: true });
+    await fs.copyFile(path.join(root, "optional", "real-plonk.test.tolk"), realTest);
   } finally {
-    await curve.terminate();
+    const activeCurve = await getCurveFromName("bls12381");
+    await activeCurve.terminate();
+    if (activeCurve !== curve) {
+      await curve.terminate();
+    }
   }
 }

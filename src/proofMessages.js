@@ -70,6 +70,9 @@ function groth16FuncPublicInputs(list) {
 }
 
 async function groth16MessageCell(proof, publicSignals, lang) {
+  if (lang === "tolk" && publicSignals.length > 255) {
+    throw new Error("Tolk array<int> wrapper supports at most 255 items.");
+  }
   const compressed = await groth16CompressProof(proof, publicSignals);
   const piA = beginCell().storeBuffer(compressed.pi_a).endCell();
   const piB = beginCell().storeBuffer(compressed.pi_b).endCell();

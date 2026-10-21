@@ -59,6 +59,7 @@
     "prepack": "npm run build",
     "test": "npm run test:node && npm run test:tolk",
     "test:node": "node scripts/run-tests.js",
+    "test:e2e:prepare": "node scripts/prepare-plonk-e2e.js",
     "test:tolk": "node scripts/run-acton-tests.js"
   },
   "dependencies": {

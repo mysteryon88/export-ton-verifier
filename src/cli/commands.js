@@ -4,6 +4,7 @@ import path from "path";
 import { generateVerifier } from "../generateVerifiers.js";
 import { formatDoctorReport, inspectVerifierInput } from "../artifactInfo.js";
 import { proofToMessageBoc } from "../proofMessages.js";
+import { readJson } from "../formats/common.js";
 import { CliUsageError } from "./errors.js";
 import { printHelp } from "./help.js";
 import {
@@ -105,8 +106,8 @@ async function runProofToMessageCommand(args, ctx) {
   }
 
   try {
-    const proof = JSON.parse(await fsp.readFile(proofPath, "utf8"));
-    const publicSignals = JSON.parse(await fsp.readFile(publicPath, "utf8"));
+    const proof = await readJson(proofPath, "proof");
+    const publicSignals = await readJson(publicPath, "public signals");
     const format = getFlagValue(args, "--format") || "base64";
     const outputPath = getFlagValue(args, "--output");
     const encoded = await proofToMessageBoc({

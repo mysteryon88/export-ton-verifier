@@ -10,6 +10,11 @@ import zkeyExportPlonkVerificationKey, {
 } from "../src/export_plonk_vk.js";
 import { loadVerificationKey } from "../src/formats/index.js";
 import { normalizeGnarkBinaryVerificationKey } from "../src/formats/gnark.js";
+import { decodeArkworksVerificationKey } from "../src/formats/arkworks.js";
+import { groth16CompressProof } from "../src/groth16CompressProof.js";
+import { proofToMessageBoc } from "../src/proofMessages.js";
+import { runCliInProcess } from "../test-support/run_cli.js";
+import { normalizeTonBlsCurveName } from "../src/limits.js";
 import { readHeaderPlonk } from "../src/helpers.js";
 import { g1Compressed, g2Compressed, getCurveFromName } from "../src/utils.js";
 
@@ -229,4 +234,136 @@ test("bounded JSON and maximum supported PLONK power remain accepted", async () 
   } finally {
     await curve.terminate();
   }
+});
+
+test("Arkworks checks IC counts and exact byte lengths before decoding points", async () => {
+  for (const [count, payloadBytes, expected] of [
+    [4097n, 0, /gamma_abc_g1 length.*at most 4096/i],
+    [1n << 63n, 0, /gamma_abc_g1 length.*at most 4096/i],
+    [1n, 47, /gamma_abc_g1.*byte length/i],
+    [1n, 49, /gamma_abc_g1.*byte length/i],
+  ]) {
+    // Invalid point bytes ensure count/length errors precede curve decoding.
+    const bytes = Buffer.alloc(48 + 3 * 96 + 8 + payloadBytes);
+    bytes.writeBigUInt64LE(count, 48 + 3 * 96);
+    await assert.rejects(decodeArkworksVerificationKey(bytes.toString("hex")), expected);
+  }
+});
+
+test("Arkworks accepts the IC count limit with valid points", async () => {
+  const curve = await getCurveFromName("bls12381");
+  try {
+    const g1 = Buffer.from(g1Compressed(curve, curve.G1.toObject(curve.G1.g)), "hex");
+    const g2 = Buffer.from(g2Compressed(curve, curve.G2.toObject(curve.G2.g)), "hex");
+    const identity = Buffer.from(g1Compressed(curve, curve.G1.toObject(curve.G1.zero)), "hex");
+    const count = Buffer.alloc(8);
+    count.writeBigUInt64LE(4096n);
+    const bytes = Buffer.concat([g1, g2, g2, g2, count, ...Array(4096).fill(identity)]);
+    const key = await decodeArkworksVerificationKey(bytes.toString("hex"));
+    assert.equal(key.IC.length, 4096);
+    assert.equal(key.nPublic, 4095);
+  } finally {
+    await curve.terminate();
+  }
+});
+
+test("Groth16 signal counts are checked before proof or signal conversion", async () => {
+  const signals = Array(4097);
+  Object.defineProperty(signals, 0, { get() { throw new Error("signal was read"); } });
+  const proof = { curve: "bls12381" };
+  await assert.rejects(groth16CompressProof(proof, signals), /at most 4096/i);
+  for (const lang of ["func", "tolk"]) {
+    await assert.rejects(
+      proofToMessageBoc({ proof, publicSignals: signals, protocol: "groth16", lang }),
+      /at most (4096|255)/i,
+    );
+  }
+  await assert.rejects(
+    proofToMessageBoc({ proof, publicSignals: Array(256), protocol: "groth16" }),
+    /at most 255/i,
+  );
+});
+
+test("Groth16 rejects malformed coordinates and bounded numeric values early", async () => {
+  const proof = {
+    curve: "bls12381",
+    pi_a: [0n, 0n, 1n],
+    pi_b: [[0n, 0n], [0n, 0n], [1n, 0n]],
+    pi_c: [0n, 0n, 1n],
+  };
+  for (const coordinate of ["1".repeat(1025), `0x${"f".repeat(1025)}`]) {
+    await assert.rejects(
+      groth16CompressProof({ ...proof, pi_a: [coordinate, 0n, 1n] }, []),
+      /numeric string.*1024/i,
+    );
+  }
+  await assert.rejects(
+    groth16CompressProof({ ...proof, pi_a: [1n << 384n, 0n, 1n] }, []),
+    /384 bits/i,
+  );
+  await assert.rejects(groth16CompressProof(proof, [1n << 256n]), /256 bits/i);
+  await assert.rejects(groth16CompressProof(proof, ["1".repeat(1025)]), /numeric string.*1024/i);
+  await assert.rejects(groth16CompressProof(proof, [Number.MAX_SAFE_INTEGER + 1]), /integer/i);
+  await assert.rejects(groth16CompressProof({ ...proof, pi_a: [[0], 0, 1] }, []), /integer/i);
+  await assert.rejects(groth16CompressProof({ ...proof, pi_b: [[0], [0, 0], [1, 0]] }, []), /coordinates/i);
+  await assert.rejects(groth16CompressProof({ ...proof, pi_a: Array(3) }, []), /integer/i);
+  await assert.rejects(groth16CompressProof(proof, Array(1)), /integer/i);
+  const coercible = { valueOf() { throw new Error("numeric object was coerced"); } };
+  await assert.rejects(groth16CompressProof(proof, [coercible]), /integer/i);
+});
+
+test("Groth16 bounds curve metadata before normalization and reports a bounded error", async () => {
+  for (const curve of ["x".repeat(1025), " ".repeat(1025)]) {
+    const proof = { curve };
+    Object.defineProperty(proof, "pi_a", {
+      get() { throw new Error("proof point was read"); },
+    });
+    await assert.rejects(groth16CompressProof(proof, []), (error) => {
+      assert.match(error.message, /proof\.curve.*1024 characters/i);
+      assert.ok(error.message.length < 160);
+      return true;
+    });
+  }
+  for (const alias of ["bls12381", "BLS12-381", " bls12_381 "]) {
+    assert.equal(normalizeTonBlsCurveName(alias), "bls12381");
+  }
+});
+
+test("proof-to-message bounds both input files before parsing JSON", async () => {
+  await withTempDir(async (tempDir) => {
+    const proofPath = path.join(tempDir, "proof.json");
+    const publicPath = path.join(tempDir, "public.json");
+    for (const [targetPath, label] of [[proofPath, "proof"], [publicPath, "public signals"]]) {
+      await fs.writeFile(proofPath, "{}");
+      await fs.writeFile(publicPath, "[]");
+      await fs.truncate(targetPath, MAX_ARTIFACT_BYTES + 1);
+      const result = await runCliInProcess(["proof-to-message", proofPath, publicPath, "--groth16"]);
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, new RegExp(`${label} artifact.*too large`, "i"));
+      assert.equal(result.stdout, "");
+    }
+  });
+});
+
+test("proof-to-message applies JSON complexity limits to both input files", async () => {
+  await withTempDir(async (tempDir) => {
+    const proofPath = path.join(tempDir, "proof.json");
+    const publicPath = path.join(tempDir, "public.json");
+    const cases = [
+      [`${"[".repeat(65)}0${"]".repeat(65)}`, /nesting.*64/i],
+      [JSON.stringify(Array(4097).fill(0)), /container.*4096/i],
+      [JSON.stringify(Array.from({ length: 3 }, () => Array(3500).fill(0))), /exceeds 10000 values/i],
+      [JSON.stringify(["1".repeat(1025)]), /numeric string.*1024/i],
+    ];
+    for (const targetPath of [proofPath, publicPath]) {
+      for (const [json, expected] of cases) {
+        await fs.writeFile(proofPath, "{}");
+        await fs.writeFile(publicPath, "[]");
+        await fs.writeFile(targetPath, json);
+        const result = await runCliInProcess(["proof-to-message", proofPath, publicPath, "--plonk"]);
+        assert.equal(result.status, 1);
+        assert.match(result.stderr, expected);
+      }
+    }
+  });
 });

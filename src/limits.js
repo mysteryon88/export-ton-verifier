@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 export function normalizeTonBlsCurveName(raw, field = "curve") {
+  if (typeof raw === "string" && raw.length > MAX_JSON_NUMERIC_STRING_LENGTH) {
+    throw new Error(`${field}: curve metadata exceeds ${MAX_JSON_NUMERIC_STRING_LENGTH} characters.`);
+  }
   if (typeof raw !== "string" || raw.trim() === "") {
     throw new Error(`${field}: BLS12-381 curve metadata is required.`);
   }
@@ -28,6 +31,8 @@ export const MAX_JSON_NODES = 10_000;
 export const MAX_JSON_CONTAINER_ENTRIES = 4096;
 export const MAX_JSON_NUMERIC_STRING_LENGTH = 1024;
 export const MAX_GNARK_G1_POINTS = 4096;
+export const MAX_ARKWORKS_IC_POINTS = 4096;
+export const MAX_GROTH16_PUBLIC_INPUTS = 4096;
 
 export function assertPlonkPublicInputCount(count, field = "public inputs") {
   if (!Number.isSafeInteger(count) || count < 0) {

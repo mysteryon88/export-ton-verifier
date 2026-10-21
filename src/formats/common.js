@@ -94,7 +94,7 @@ export async function readJson(path, label) {
   const content = (await readFileBounded(path, label)).toString("utf8");
   try {
     const value = JSON.parse(content);
-    assertBoundedJson(value);
+    assertBoundedJson(value, label);
     return value;
   } catch (err) {
     if (err?.code === "ERR_VERIFICATION_KEY_LIMIT") throw err;
@@ -121,7 +121,7 @@ export async function readFileBounded(
   return Buffer.concat(chunks, total);
 }
 
-export function assertBoundedJson(value) {
+export function assertBoundedJson(value, label = "verification key") {
   const pending = [[value, 0]];
   let nodes = 0;
 
@@ -129,15 +129,15 @@ export function assertBoundedJson(value) {
     const [current, depth] = pending.pop();
     nodes += 1;
     if (nodes > MAX_JSON_NODES) {
-      throw limitError(`verification key JSON exceeds ${MAX_JSON_NODES} values.`);
+      throw limitError(`${label} JSON exceeds ${MAX_JSON_NODES} values.`);
     }
     if (depth > MAX_JSON_DEPTH) {
-      throw limitError(`verification key JSON nesting exceeds ${MAX_JSON_DEPTH}.`);
+      throw limitError(`${label} JSON nesting exceeds ${MAX_JSON_DEPTH}.`);
     }
     if (typeof current === "string" && isNumericString(current)) {
       if (current.length > MAX_JSON_NUMERIC_STRING_LENGTH) {
         throw limitError(
-          `verification key JSON numeric string exceeds ${MAX_JSON_NUMERIC_STRING_LENGTH} characters.`,
+          `${label} JSON numeric string exceeds ${MAX_JSON_NUMERIC_STRING_LENGTH} characters.`,
         );
       }
       continue;
@@ -147,7 +147,7 @@ export function assertBoundedJson(value) {
     if (Array.isArray(current)) {
       if (current.length > MAX_JSON_CONTAINER_ENTRIES) {
         throw limitError(
-          `verification key JSON container exceeds ${MAX_JSON_CONTAINER_ENTRIES} entries.`,
+          `${label} JSON container exceeds ${MAX_JSON_CONTAINER_ENTRIES} entries.`,
         );
       }
       for (const child of current) pending.push([child, depth + 1]);
@@ -160,7 +160,7 @@ export function assertBoundedJson(value) {
       entries += 1;
       if (entries > MAX_JSON_CONTAINER_ENTRIES) {
         throw limitError(
-          `verification key JSON container exceeds ${MAX_JSON_CONTAINER_ENTRIES} entries.`,
+          `${label} JSON container exceeds ${MAX_JSON_CONTAINER_ENTRIES} entries.`,
         );
       }
     }

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "fs/promises";
 import os from "os";
 import path from "path";
+import { createHash } from "node:crypto";
 import { Cell } from "@ton/core";
 import { utils } from "ffjavascript";
 import { getCurveFromName } from "../src/utils.js";
@@ -84,6 +85,10 @@ test("proofToMessageBoc builds Groth16 Tolk and FunC internal messages", async (
 
   assert.equal(opcodeFromBase64(tolk), 0x3b3cca17);
   assert.equal(opcodeFromBase64(func), 0x3b3cca17);
+  assert.equal(createHash("sha256").update(Buffer.from(tolk, "base64")).digest("hex"),
+    "99ea74ed9a00fe2e55abfb6053557fbe0cf904a60b8b1c4834527b4782eb514a");
+  assert.equal(createHash("sha256").update(Buffer.from(func, "base64")).digest("hex"),
+    "9d63db83514f26835890f5b44e96fa1d27e6a7b12e3ce4bc5f349de6df23de39");
 
   const [tolkBody] = Cell.fromBoc(Buffer.from(tolk, "base64"));
   const tolkRoot = tolkBody.beginParse();
@@ -186,4 +191,34 @@ test("proof-to-message accepts protocol flags before proof paths", async () => {
 
     assert.equal(opcodeFromBase64(output.trim()), 0x3b3cca17);
   });
+});
+
+test("Groth16 compression ignores unrelated metadata and retains affine/numeric forms", async () => {
+  const { groth16CompressProof } = await import("../src/groth16CompressProof.js");
+  const { groth16, publicSignals } = await makeProofs();
+  const expected = await groth16CompressProof(groth16, publicSignals);
+  const proof = {
+    ...groth16,
+    curve: "BLS12_381",
+    pi_a: groth16.pi_a.slice(0, 2).map(BigInt),
+    pi_b: groth16.pi_b.slice(0, 2).map((pair) => pair.map((value) => `0x${BigInt(value).toString(16)}`)),
+    pi_c: groth16.pi_c.map(BigInt),
+  };
+  Object.defineProperty(proof, "unused", {
+    enumerable: true,
+    get() { throw new Error("unrelated proof metadata was traversed"); },
+  });
+  assert.deepEqual(await groth16CompressProof(proof, [7, 8n]), expected);
+});
+
+test("Groth16 retains supported signal-count boundaries", async () => {
+  const { groth16CompressProof } = await import("../src/groth16CompressProof.js");
+  const { proofToMessageBoc } = await import("../src/proofMessages.js");
+  const { groth16 } = await makeProofs();
+  const compressed = await groth16CompressProof(groth16, Array(4096).fill("0"));
+  assert.equal(compressed.pubInputs.length, 4096);
+  for (const [lang, count] of [["tolk", 255], ["func", 256]]) {
+    const boc = await proofToMessageBoc({ proof: groth16, publicSignals: Array(count).fill("0"), lang });
+    assert.equal(opcodeFromBase64(boc), 0x3b3cca17);
+  }
 });
