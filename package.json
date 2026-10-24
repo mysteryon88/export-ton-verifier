@@ -3,7 +3,7 @@
   "version": "3.1.0",
   "packageManager": "npm@12.0.2",
   "engines": {
-    "node": "24.16.0"
+    "node": "24.22.1"
   },
   "description": "Tool for generating Groth16 and PLONK verifier code for the TON blockchain from SnarkJS .zkey or verification key JSON files.",
   "homepage": "https://github.com/mysteryon88/export-ton-verifier#readme",

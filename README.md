@@ -112,7 +112,7 @@ Values such as the recipient, asset, amount, root, chain identifier, contract ad
 
 ## Development tests
 
-Use Node.js 24.16.0 and Acton 1.2.1-trunk with its bundled Tolk 1.5.0
+Use Node.js 24.22.1 and Acton 1.2.1-trunk with its bundled Tolk 1.5.0
 compiler for the contract test suite. Compilation has also been checked with
 Tolk 1.4.2, but the runtime suite has not been run with that compiler.
 Check the compiler version with `acton doctor`. On Windows,
